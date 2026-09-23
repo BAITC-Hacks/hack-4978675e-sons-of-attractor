@@ -1,0 +1,10 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      DATASET_PATH: /service/backend/data/catalog.csv
+      FACTS_PATH: /service/backend/data/facts.json
