@@ -6,3 +6,8 @@
 **/.env.*
 **/.idea
 tz/
+**/.tools
+**/node_modules
+**/.artifacts
+**/.codex
+**/.agents

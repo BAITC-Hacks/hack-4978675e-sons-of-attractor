@@ -20,7 +20,7 @@ EXPECTED = {
 }
 
 
-def run(base_url: str, require_facts: bool = False) -> dict:
+def run(base_url: str, require_facts: bool = False, require_live_ai: bool = False) -> dict:
     times = []
 
     def request(path, body=None):
@@ -39,6 +39,8 @@ def run(base_url: str, require_facts: bool = False) -> dict:
     assert meta["versions"]["dataset"] == "6a724b6b7dfb5973343e68ba18dadb60fc807d87e3d78f03ee86fb26cb089f7d"
     if require_facts:
         assert meta["explanation_mode"] == "approved_facts", "Full acceptance requires the approved AI registry"
+    if require_live_ai:
+        assert meta.get("ai", {}).get("answers", {}).get("enabled"), "Live AI explanations are not configured"
     assert {d["id"] for d in meta["demo_queries"]} == set(EXPECTED)
     scenarios = []
     for demo in meta["demo_queries"]:
@@ -48,7 +50,16 @@ def run(base_url: str, require_facts: bool = False) -> dict:
         assert parsed.status == status and parsed.counts.eligible_count == count, demo["id"]
         assert [c.id for c in parsed.cards] == ids, demo["id"]
         assert result["versions"] == meta["versions"]
-        assert request("/api/recommendations", demo["query"]) == result
+        repeated = request("/api/recommendations", demo["query"])
+        RecommendationResponse.model_validate(repeated)
+        # Live wording can vary; eligibility, order, prices and suggestions cannot.
+        for field in ("status", "query", "counts", "diagnostics", "suggestions", "city_alternatives", "versions"):
+            assert repeated[field] == result[field], (demo["id"], field)
+        assert [c["id"] for c in repeated["cards"]] == ids
+        if not meta.get("ai", {}).get("answers", {}).get("enabled"):
+            assert repeated == result
+        if require_live_ai and parsed.cards:
+            assert parsed.answer_generation.status == "generated" and parsed.explanation_mode == "live_quotes", demo["id"]
         for suggestion in result["suggestions"]:
             applied = request("/api/recommendations", suggestion["query"])
             assert applied["versions"] == result["versions"]
@@ -66,7 +77,8 @@ def run(base_url: str, require_facts: bool = False) -> dict:
             quotes = [next(e.quote for e in card.evidence if e.kind == "description") for card in parsed.cards]
             assert "два вокалиста" in quotes[0] and "струнный квартет" in quotes[1]
         scenarios.append({"id": demo["id"], "status": status, "eligible_count": count,
-                          "shown_ids": ids, "verified_suggestions": len(result["suggestions"])})
+                          "shown_ids": ids, "verified_suggestions": len(result["suggestions"]),
+                          "answer_status": parsed.answer_generation.status})
     return {
         "checked_at_utc": datetime.now(timezone.utc).isoformat(),
         "explanation_mode": meta["explanation_mode"], "versions": meta["versions"],
@@ -80,9 +92,10 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-url", default="http://127.0.0.1:8000")
     parser.add_argument("--require-facts", action="store_true")
+    parser.add_argument("--require-live-ai", action="store_true")
     args = parser.parse_args()
     try:
-        print(json.dumps(run(args.base_url, args.require_facts), ensure_ascii=False, indent=2))
+        print(json.dumps(run(args.base_url, args.require_facts, args.require_live_ai), ensure_ascii=False, indent=2))
         return 0
     except (AssertionError, ValueError, URLError, HTTPError, TimeoutError, KeyError, StopIteration) as exc:
         print(f"Smoke check failed: {exc}")
