@@ -366,8 +366,10 @@ function renderResult(result, previous) {
   else heading.textContent = result.status === 'no_category_in_city' ? 'В этом городе такой категории нет в каталоге' : 'Есть кандидаты, но никто не проходит условия';
   $('result-counter').textContent = result.status === 'found' ? `${result.counts.shown_count} ${variants(result.counts.shown_count)}` : 'Нет подходящих';
   container.append(stale, heading, querySummary(result.query), el('p', 'result-summary', result.summary));
-  const warnings = [...new Set(result.warnings.map(value => factsWarnings.has(value) ? factsNotice : value))];
-  if (result.explanation_mode === 'structured_only' && !warnings.includes(factsNotice)) warnings.unshift(factsNotice);
+
+  const warnings = [...result.warnings];
+  if (result.cards.length && result.explanation_mode === 'structured_only' && !warnings.some(value => value.includes('структурирован'))) warnings.unshift('Подбор работает по структурированным данным; факты из описаний недоступны.');
+
   if (warnings.length) {
     const box = el('div', 'notice mode-warning');
     box.append(...warnings.map(value => el('p', '', fieldMessage(value, 'Часть сведений недоступна; проверьте условия и источники.'))));

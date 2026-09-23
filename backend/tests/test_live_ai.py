@@ -10,6 +10,7 @@ from backend.app import ai_answers, llm, text_input
 from backend.app.catalog import load_catalog
 from backend.app.core.config import PROJECT_ROOT, ModelConfig, Settings
 from backend.app.demo_queries import demo_queries
+from backend.app.facts import load_facts
 from backend.app.main import create_app
 from backend.app.recommendations import recommend
 from backend.app.schemas import RecommendationQuery
@@ -181,7 +182,23 @@ def test_disabled_and_empty_results_do_not_call_model(monkeypatch, catalog, conf
     baseline = recommend(demo_queries(catalog)[0].query, catalog)
     assert asyncio.run(ai_answers.enhance_answer(baseline, catalog, None)) == baseline
     empty = recommend(next(d.query for d in demo_queries(catalog) if d.id == "decorator"), catalog)
+    assert empty.warnings == []
     assert asyncio.run(ai_answers.enhance_answer(empty, catalog, config)).answer_generation.status == "not_needed"
+
+
+def test_empty_december_host_result_has_no_irrelevant_registry_warning(monkeypatch, catalog, config, tmp_path):
+    async def forbidden(*args): raise AssertionError("Empty result must not call the model")
+    monkeypatch.setattr(ai_answers, "generate_json", forbidden)
+    catalog = replace(catalog, facts=load_facts(tmp_path / "missing-facts.json", catalog))
+    query = RecommendationQuery(city="Алматы", category="Ведущий", event_format="корпоратив",
+                                date="2026-12-16", budget_kzt=800000, language="русский", duration_hours=3)
+    result = asyncio.run(ai_answers.enhance_answer(recommend(query, catalog), catalog, config))
+    assert result.status == "all_filtered" and result.cards == [] and result.warnings == []
+    assert result.answer_generation.status == "not_needed"
+    assert result.diagnostics.reason_counts.model_dump() == {"busy": 9, "format": 1, "budget": 7, "language": 0, "duration": 0}
+    assert [(s.value.isoformat(), s.eligible_count) for s in result.suggestions] == [("2026-12-15", 1), ("2026-12-17", 1)]
+    # Missing description evidence remains visible for actual contractor cards.
+    assert recommend(query.model_copy(update={"date": query.date.replace(day=15)}), catalog).warnings
 
 
 def test_actual_same_price_hosts_have_distinct_explanations(catalog):
