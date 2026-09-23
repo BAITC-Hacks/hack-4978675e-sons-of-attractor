@@ -6,4 +6,6 @@ logs/
 .venv/
 .env.local
 .codex/
-.env.example
+tz/
+AGENTS.md
+idea.md
