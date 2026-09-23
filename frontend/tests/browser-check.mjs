@@ -45,6 +45,28 @@ async function submit(page) {
   await page.waitForFunction(() => document.querySelector('.contractor-card') || document.querySelector('#request-feedback:not([hidden])') || document.querySelector('#results-title')?.textContent.includes('кандидаты') || document.querySelector('#results-title')?.textContent.includes('категории нет'));
 }
 async function resultIds(page) { return page.locator('.contractor-card').evaluateAll(cards => cards.map(card => card.dataset.contractorId)); }
+async function settled(page) {
+  await page.waitForFunction(() => document.getElementById('results-panel').getAttribute('aria-busy') === 'false');
+  assert.equal(await page.locator('#request-feedback').isVisible(), false);
+}
+async function visibleResultHeading(page) {
+  const bounds = await page.locator('#results-title').evaluate(heading => {
+    const { top, bottom } = heading.getBoundingClientRect();
+    return { top, bottom, height: innerHeight, focused: document.activeElement === heading };
+  });
+  assert.ok(bounds.top >= -1 && bounds.bottom <= bounds.height + 1, `Result heading outside viewport: ${JSON.stringify(bounds)}`);
+  assert.equal(bounds.focused, true);
+}
+function structuredResponse(query) {
+  const response = recommendation(query);
+  response.explanation_mode = 'structured_only';
+  response.versions = { ...response.versions, facts: null };
+  response.cards.forEach(card => {
+    card.rank.format_evidence = false;
+    card.evidence = card.evidence.filter(item => item.kind !== 'description');
+  });
+  return response;
+}
 
 async function setup(options = {}) {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1050 }, reducedMotion: 'reduce' });
@@ -276,10 +298,133 @@ try {
         response.cards.forEach(card => { card.evidence = card.evidence.filter(item => item.kind !== 'description'); card.comparison_note = 'По доступным сведениям варианты не удаётся содержательно различить'; });
         return route.fulfill({ json: response });
       } });
-      assert.equal(await page.locator('#meta-feedback').isVisible(), true);
+      assert.equal(await page.locator('#facts-feedback').isVisible(), true);
       await submit(page);
+      assert.equal(await page.locator('#facts-feedback').isVisible(), false);
       assert.match(await page.locator('.mode-warning').textContent(), /факты из описаний недоступны/);
       assert.equal(await page.locator('.comparison-note').count(), 3); await page.close();
+    });
+    await run('demo results and applied suggestions reveal the heading on desktop and mobile', async () => {
+      for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+        const { page, errors } = await setup();
+        try {
+          await page.setViewportSize(viewport);
+          assert.equal(await page.evaluate(() => scrollY), 0, 'Loading dictionaries must not scroll.');
+          for (let index = 0; index < meta.demo_queries.length; index++) {
+            await page.locator('.demo-button').nth(index).click();
+            await settled(page); await visibleResultHeading(page);
+          }
+          for (const [index, label] of [[3, 'Выбрать 18 декабря'], [4, /Установить бюджет/]]) {
+            await page.locator('.demo-button').nth(index).click();
+            await settled(page);
+            await page.getByRole('button', { name: label }).click();
+            await settled(page); await visibleResultHeading(page);
+          }
+          assert.deepEqual(errors, []);
+          await page.screenshot({ path: resolve(artifactPath, `fixed-viewport-${viewport.width}.png`) });
+        } finally { await page.close(); }
+      }
+    });
+    await run('an already visible result needs no explicit scrolling and stale replies cannot scroll', async () => {
+      let releaseOld, markOldStarted;
+      const oldResponse = new Promise(resolve => { releaseOld = resolve; });
+      const oldStarted = new Promise(resolve => { markOldStarted = resolve; });
+      const { page, requests } = await setup({ ignoreAbort: true, respond: async (route, query, count) => {
+        if (count === 2) { markOldStarted(); await oldResponse; }
+        await route.fulfill({ json: recommendation(query) });
+      } });
+      try {
+        // Keep both the form controls and heading visible; otherwise Playwright's
+        // click scrolls the form into view before the application handles the reply.
+        await page.setViewportSize({ width: 1440, height: 2000 });
+        await submit(page);
+        await visibleResultHeading(page);
+        await page.evaluate(() => {
+          window.resultScrollCalls = 0;
+          const original = Element.prototype.scrollIntoView;
+          Element.prototype.scrollIntoView = function (...args) {
+            if (this.id === 'results-title') window.resultScrollCalls++;
+            return original.apply(this, args);
+          };
+        });
+        await page.locator('#submit-button').click();
+        await oldStarted;
+        await page.locator('#date').fill('2026-11-14');
+        await submit(page); await visibleResultHeading(page);
+        assert.equal(await page.evaluate(() => window.resultScrollCalls), 0, 'A visible heading must not jump.');
+        const stable = await page.evaluate(() => ({ scroll: scrollY, calls: window.resultScrollCalls }));
+        const oldArrived = page.waitForResponse(response => response.url().endsWith('/api/recommendations') && response.request().postDataJSON().date === '2026-11-13');
+        releaseOld(); await oldArrived;
+        await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        assert.deepEqual(await page.evaluate(() => ({ scroll: scrollY, calls: window.resultScrollCalls })), stable);
+        assert.deepEqual(await resultIds(page), ['HK-64395', 'HK-90011']);
+        assert.equal(requests.length, 3);
+      } finally { releaseOld(); await page.close(); }
+    });
+    await run('facts mode follows each accepted response, preserving versions and errors', async () => {
+      const { page } = await setup({
+        meta: { ...meta, explanation_mode: 'structured_only', versions: { ...meta.versions, facts: null } },
+        respond: (route, query, count) => {
+          if (count === 3) return route.fulfill({ status: 503, json: { error: { message: 'Unavailable', fields: {} } } });
+          return route.fulfill({ json: count === 2 ? structuredResponse(query) : recommendation(query) });
+        },
+      });
+      try {
+        assert.equal(await page.locator('#facts-feedback').isVisible(), true);
+        assert.equal(await page.locator('#meta-feedback').isVisible(), false);
+        await submit(page);
+        assert.equal(await page.locator('#facts-feedback').isVisible(), false);
+        assert.equal(await page.locator('.mode-warning').count(), 0);
+        assert.equal(await page.locator('.evidence-list blockquote').count(), 3);
+        assert.doesNotMatch(await page.locator('body').innerText(), /факты из описаний недоступны/);
+        await page.locator('#date').fill('2026-11-14'); await submit(page);
+        assert.equal(await page.locator('#facts-feedback').isVisible(), false);
+        assert.match(await page.locator('.mode-warning').textContent(), /факты из описаний недоступны/);
+        assert.equal(await page.locator('.evidence-list blockquote').count(), 0);
+        assert.equal(await page.locator('#date-comparison').count(), 0, 'Different facts versions must not be compared.');
+        await submit(page);
+        assert.equal(await page.locator('#request-feedback').isVisible(), true);
+        assert.equal(await page.locator('#facts-feedback').isVisible(), true, 'Outside a result, preserve the last known mode.');
+        await page.getByRole('button', { name: 'Повторить', exact: true }).click();
+        await settled(page);
+        assert.equal(await page.locator('#facts-feedback').isVisible(), false);
+        assert.equal(await page.locator('.mode-warning').count(), 0);
+      } finally { await page.close(); }
+    });
+    await run('outdated replies cannot restore a stale facts warning', async () => {
+      let releaseOld, markOldStarted;
+      const oldResponse = new Promise(resolve => { releaseOld = resolve; });
+      const oldStarted = new Promise(resolve => { markOldStarted = resolve; });
+      const { page, requests } = await setup({ ignoreAbort: true, respond: async (route, query, count) => {
+        if (count === 1) { markOldStarted(); await oldResponse; return route.fulfill({ json: structuredResponse(query) }); }
+        return route.fulfill({ json: recommendation(query) });
+      } });
+      try {
+        await page.locator('#submit-button').click();
+        await oldStarted;
+        await page.locator('#date').fill('2026-11-14'); await submit(page);
+        const oldArrived = page.waitForResponse(response => response.url().endsWith('/api/recommendations') && response.request().postDataJSON().date === '2026-11-13');
+        releaseOld(); await oldArrived;
+        await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        assert.equal(await page.locator('#facts-feedback').isVisible(), false);
+        assert.equal(await page.locator('.mode-warning').count(), 0);
+        assert.deepEqual(await resultIds(page), ['HK-64395', 'HK-90011']);
+        assert.equal(requests.length, 2);
+      } finally { releaseOld(); await page.close(); }
+    });
+    await run('city alternatives render the singular profile without promising availability', async () => {
+      const { page } = await setup({ respond: (route, query) => {
+        const response = recommendation(query);
+        if (response.city_alternatives.length) response.city_alternatives[0].catalog_count = 1;
+        return route.fulfill({ json: response });
+      } });
+      try {
+        await page.locator('.demo-button').nth(2).click(); await settled(page);
+        const text = await page.locator('.city-alternatives').textContent();
+        assert.match(text, /Алматы: 1 профиль этой категории/);
+        assert.match(text, /не число подходящих на вашу дату/);
+        assert.match(text, /Выезд в другой город не подтверждён/);
+      } finally { await page.close(); }
     });
     await run('request timeout exits loading and permits retry', async () => {
       const { page } = await setup({ respond: async route => { await delay(1500); try { await route.abort(); } catch {} } });

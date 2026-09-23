@@ -2,7 +2,7 @@ import {
   QUERY_FIELDS, REASONS, REASON_LABELS, parseForm, validateMeta, validateResponse,
   queryKey, changedFields, dateChanges,
 } from './lib/contracts.mjs';
-import { number, money, dateLabel, variants, fieldMessage } from './lib/format.mjs';
+import { number, money, dateLabel, variants, profiles, fieldMessage } from './lib/format.mjs';
 
 const $ = id => document.getElementById(id);
 const form = $('search-form');
@@ -23,6 +23,24 @@ function button(label, action, className = 'button button-secondary') {
   return element;
 }
 function announce(message) { $('announcer').textContent = message; }
+function focusResult() {
+  const heading = $('results-title');
+  heading.focus({ preventScroll: true });
+  const bounds = heading.getBoundingClientRect();
+  if (bounds.top < 0 || bounds.bottom > window.innerHeight) {
+    // Instant scrolling also respects reduced-motion preferences.
+    heading.scrollIntoView({ block: 'start', behavior: 'instant' });
+  }
+}
+function syncFactsNotice() {
+  // Result warnings describe their own snapshot. Outside a result, show the
+  // latest known mode without sharing the catalogue error container.
+  const mode = (state.lastSuccess ?? state.meta)?.explanation_mode;
+  const show = mode === 'structured_only' && !state.displayed;
+  const notice = $('facts-feedback');
+  notice.textContent = show ? 'Подбор работает по структурированным данным; факты из описаний недоступны.' : '';
+  notice.hidden = !show;
+}
 function readForm() { return Object.fromEntries(QUERY_FIELDS.map(key => [key, fields[key].value])); }
 function fillForm(query) {
   for (const key of QUERY_FIELDS) fields[key].value = query[key] ?? '';
@@ -78,6 +96,7 @@ function showIdle() {
   state.displayed = null;
   $('result-content').replaceChildren(originalEmpty.cloneNode(true));
   $('result-counter').textContent = 'До 3 вариантов';
+  syncFactsNotice();
 }
 function editForm() {
   const pending = Boolean(state.active);
@@ -110,6 +129,7 @@ async function loadMeta() {
   $('submit-button').disabled = true;
   $('meta-feedback').hidden = true;
   $('meta-feedback').removeAttribute('role');
+  $('facts-feedback').hidden = true;
   $('catalog-state').textContent = 'Загружаем каталог';
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 12000);
@@ -132,15 +152,11 @@ async function loadMeta() {
     document.body.dataset.ready = 'true';
     if (meta.demo_queries.length) fillForm(meta.demo_queries[0].query);
     renderDemos(meta.demo_queries);
-    if (meta.explanation_mode === 'structured_only') {
-      const box = $('meta-feedback');
-      box.className = 'notice service-notice';
-      box.replaceChildren(el('p', '', 'Подбор работает по структурированным данным; факты из описаний недоступны.'));
-      box.hidden = false;
-    }
+    syncFactsNotice();
     announce('Каталог загружен. Укажите условия или выберите пример.');
   } catch {
     state.meta = null;
+    syncFactsNotice();
     document.body.dataset.ready = 'false';
     $('catalog-state').textContent = 'Каталог недоступен';
     const box = $('meta-feedback');
@@ -188,6 +204,7 @@ async function submitQuery(query) {
   state.retryQuery = query;
   state.dirty = false;
   state.displayed = null;
+  syncFactsNotice();
   setBusy(true);
   const loading = el('div', 'loading-state');
   const heading = el('h2', '', 'Проверяем условия'); heading.id = 'results-title'; heading.tabIndex = -1;
@@ -211,8 +228,9 @@ async function submitQuery(query) {
     state.displayed = result;
     state.retryQuery = null;
     state.dirty = false;
+    syncFactsNotice();
     announce(`${$('results-title').textContent}. ${result.summary}`);
-    $('results-title').focus({ preventScroll: true });
+    focusResult();
   } catch (error) {
     if (id !== state.requestId) return;
     showIdle();
@@ -369,7 +387,7 @@ function renderCities(result, container) {
   section.append(el('h3', '', 'Категория есть в другом городе'));
   for (const alternative of result.city_alternatives) {
     const item = el('div', 'suggestion');
-    item.append(el('p', '', `${alternative.city}: ${alternative.catalog_count} профиля этой категории в каталоге.`),
+    item.append(el('p', '', `${alternative.city}: ${alternative.catalog_count} ${profiles(alternative.catalog_count)} этой категории в каталоге.`),
       el('p', 'suggestion-caveat', 'Это наличие категории, а не число подходящих на вашу дату. Выезд в другой город не подтверждён.'),
       button(`Искать: ${alternative.city}`, () => applyQuery(result, { ...result.query, city: alternative.city }, 'city')));
     section.append(item);

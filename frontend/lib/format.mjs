@@ -7,11 +7,13 @@ export function dateLabel(iso, withYear = true) {
   const [year, month, day] = iso.split('-').map(Number);
   return `${day} ${months[month - 1]}${withYear ? ` ${year}` : ''}`;
 }
-export function variants(count) {
+function plural(count, one, few, many) {
   const ending = count % 100;
-  if (ending >= 11 && ending <= 14) return 'вариантов';
-  return count % 10 === 1 ? 'вариант' : count % 10 >= 2 && count % 10 <= 4 ? 'варианта' : 'вариантов';
+  if (ending >= 11 && ending <= 14) return many;
+  return count % 10 === 1 ? one : count % 10 >= 2 && count % 10 <= 4 ? few : many;
 }
+export const variants = count => plural(count, 'вариант', 'варианта', 'вариантов');
+export const profiles = count => plural(count, 'профиль', 'профиля', 'профилей');
 export function fieldMessage(value, fallback) {
   // Error pages and infrastructure details must not become user-facing messages.
   if (typeof value !== 'string' || !value.trim() || value.length > 350 || /traceback|stack trace|[A-Za-z]:[\\/]|\/(?:home|users|app|tmp)\/|<[^>]+>/i.test(value)) return fallback;

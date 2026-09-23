@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseForm, validateMeta, validateResponse, dateChanges, queryKey, isCalendarDate } from '../lib/contracts.mjs';
-import { dateLabel, fieldMessage } from '../lib/format.mjs';
+import { dateLabel, fieldMessage, profiles, variants } from '../lib/format.mjs';
 import { meta, baseQuery, recommendation } from './fixtures.mjs';
 
 const values = () => Object.fromEntries(Object.entries(baseQuery).map(([key, value]) => [key, String(value)]));
@@ -72,4 +72,17 @@ test('infrastructure details are never shown as friendly API errors', () => {
   assert.equal(fieldMessage('Traceback: C:\\Users\\secret.py', 'fallback'), 'fallback');
   assert.equal(fieldMessage('<html>Server failure</html>', 'fallback'), 'fallback');
   assert.equal(fieldMessage('Проверьте дату', 'fallback'), 'Проверьте дату');
+});
+test('profile and variant counts use Russian plural forms including teens', () => {
+  for (const [count, profile, variant] of [
+    [0, 'профилей', 'вариантов'], [1, 'профиль', 'вариант'],
+    [2, 'профиля', 'варианта'], [4, 'профиля', 'варианта'],
+    [5, 'профилей', 'вариантов'], [11, 'профилей', 'вариантов'],
+    [14, 'профилей', 'вариантов'], [21, 'профиль', 'вариант'],
+    [22, 'профиля', 'варианта'], [25, 'профилей', 'вариантов'],
+    [111, 'профилей', 'вариантов'], [114, 'профилей', 'вариантов'],
+  ]) {
+    assert.equal(profiles(count), profile, `profiles(${count})`);
+    assert.equal(variants(count), variant, `variants(${count})`);
+  }
 });
