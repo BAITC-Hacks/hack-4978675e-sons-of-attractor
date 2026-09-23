@@ -71,6 +71,7 @@ function structuredResponse(query) {
 async function setup(options = {}) {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1050 }, reducedMotion: 'reduce' });
   const requests = [];
+  const parseRequests = [];
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   if (options.ignoreAbort) await page.addInitScript(() => {
@@ -88,9 +89,14 @@ async function setup(options = {}) {
     if (options.respond) return options.respond(route, query, requests.length);
     return route.fulfill({ json: recommendation(query) });
   });
+  await page.route('**/api/parse-request', async route => {
+    const query = route.request().postDataJSON(); parseRequests.push(query);
+    if (options.parse) return options.parse(route, query);
+    return route.fulfill({ status: 503, json: { error: { code: 'text_input_disabled', message: 'Unavailable', fields: {} } } });
+  });
   await page.goto(localUrl);
   if (!options.metaFailOnce) await ready(page);
-  return { page, requests, errors };
+  return { page, requests, parseRequests, errors };
 }
 
 try {
@@ -116,6 +122,77 @@ try {
       await page.close();
     });
   } else {
+    const aiMeta = { ...meta, ai: { text_input: { enabled: true, provider: 'openai', model: 'gpt-6-luna' }, answers: { enabled: true, provider: 'anthropic', model: 'claude-sonnet-5' } } };
+    const parsed = changes => ({ query: { ...baseQuery }, missing_fields: [], review_fields: [], warnings: [], ready: true, provider: 'openai', model: 'gpt-6-luna', ...changes });
+    await run('text input is disabled without credentials while the form works', async () => {
+      const { page, parseRequests } = await setup();
+      assert.equal(await page.locator('#event-text').isDisabled(), true);
+      assert.equal(await page.locator('#parse-button').isDisabled(), true);
+      await submit(page);
+      assert.equal(parseRequests.length, 0);
+      await page.close();
+    });
+    await run('complete natural language query fills the form and runs real recommendation flow', async () => {
+      const { page, requests, parseRequests, errors } = await setup({ meta: aiMeta, parse: route => route.fulfill({ json: parsed() }) });
+      await page.locator('#event-text').fill('Нужен зал в Алматы на корпоратив 13 ноября 2026, бюджет 7 млн тенге, русский, 6 часов.');
+      await page.locator('#parse-button').click();
+      await page.locator('.contractor-card').first().waitFor();
+      await settled(page);
+      assert.equal(parseRequests.length, 1); assert.deepEqual(requests, [baseQuery]);
+      assert.equal(await page.locator('#budget_kzt').inputValue(), '7000000');
+      assert.equal(await page.locator('#parse-button').isEnabled(), true);
+      assert.deepEqual(errors, []);
+      await page.close();
+    });
+    await run('partial parsing clears prior defaults and never starts a broad search', async () => {
+      const partial = parsed({ query: { ...baseQuery, budget_kzt: null, language: null, duration_hours: null }, missing_fields: ['budget_kzt'], ready: false });
+      const { page, requests } = await setup({ meta: aiMeta, parse: route => route.fulfill({ json: partial }) });
+      await page.locator('#event-text').fill('Нужен зал в Алматы на корпоратив 13 ноября 2026.');
+      await page.locator('#parse-button').click();
+      await page.locator('#budget_kzt[aria-invalid="true"]').waitFor();
+      assert.equal(await page.locator('#budget_kzt').inputValue(), '');
+      assert.equal(await page.locator('#language').inputValue(), '');
+      assert.equal(await page.locator('#duration_hours').inputValue(), '');
+      assert.equal(requests.length, 0);
+      await page.locator('#budget_kzt').fill('7000000'); await submit(page);
+      assert.equal(requests.length, 1);
+      await page.close();
+    });
+    await run('parser failure keeps manual search available and secrets invisible', async () => {
+      const { page, requests } = await setup({ meta: aiMeta, parse: route => route.fulfill({ status: 503, json: { error: { code: 'text_parse_failed', message: 'secret-key Traceback', fields: {} } } }) });
+      await page.locator('#event-text').fill('Нужен ведущий'); await page.locator('#parse-button').click();
+      await page.locator('#text-feedback.error-notice').waitFor();
+      assert.doesNotMatch(await page.locator('body').innerText(), /secret-key|Traceback/);
+      await submit(page); assert.equal(requests.length, 1);
+      await page.close();
+    });
+    await run('late parser responses cannot overwrite manually edited fields', async () => {
+      let release, started;
+      const gate = new Promise(resolve => { release = resolve; });
+      const called = new Promise(resolve => { started = resolve; });
+      const { page, requests } = await setup({ meta: aiMeta, ignoreAbort: true, parse: async route => { started(); await gate; return route.fulfill({ json: parsed() }); } });
+      try {
+        await page.locator('#event-text').fill('Распознай запрос'); await page.locator('#parse-button').click(); await called;
+        await page.locator('#budget_kzt').fill('8000000');
+        const arrived = page.waitForResponse(response => response.url().endsWith('/api/parse-request'));
+        release(); await arrived;
+        await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        assert.equal(await page.locator('#budget_kzt').inputValue(), '8000000');
+        assert.equal(requests.length, 0);
+      } finally { release(); await page.close(); }
+    });
+    await run('live AI excerpts render without a contradictory missing-facts warning', async () => {
+      const { page } = await setup({ meta: { ...aiMeta, explanation_mode: 'structured_only', versions: { ...meta.versions, facts: null } }, respond: (route, query) => {
+        const response = recommendation(query); response.explanation_mode = 'live_quotes';
+        response.answer_generation = { status: 'generated', provider: 'anthropic', model: 'claude-sonnet-5' };
+        return route.fulfill({ json: response });
+      } });
+      assert.equal(await page.locator('#facts-feedback').isVisible(), false);
+      await submit(page);
+      assert.ok(await page.locator('.evidence-list blockquote').count() > 0);
+      assert.doesNotMatch(await page.locator('body').innerText(), /факты из описаний недоступны/);
+      await page.close();
+    });
     await run('initial state, live dictionary values, original card order and evidence', async () => {
       const { page, requests, errors } = await setup();
       assert.equal(requests.length, 0, 'Loading meta must not auto-run recommendations.');

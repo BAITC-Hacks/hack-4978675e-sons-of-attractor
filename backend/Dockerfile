@@ -7,7 +7,9 @@ COPY backend/constraints.txt /service/backend/constraints.txt
 
 RUN pip install --no-cache-dir -r /service/backend/requirements.txt
 
-COPY . /service
+COPY backend /service/backend
+COPY frontend/index.html frontend/styles.css frontend/app.js /service/frontend/
+COPY frontend/lib /service/frontend/lib
 
 EXPOSE 8000
 

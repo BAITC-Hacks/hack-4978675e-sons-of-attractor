@@ -1,10 +1,30 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseForm, validateMeta, validateResponse, dateChanges, queryKey, isCalendarDate } from '../lib/contracts.mjs';
+import { parseForm, validateMeta, validateResponse, validateTextResponse, dateChanges, queryKey, isCalendarDate } from '../lib/contracts.mjs';
 import { dateLabel, fieldMessage, profiles, variants } from '../lib/format.mjs';
 import { meta, baseQuery, recommendation } from './fixtures.mjs';
 
 const values = () => Object.fromEntries(Object.entries(baseQuery).map(([key, value]) => [key, String(value)]));
+
+test('AI capabilities and live quotes extend the existing contract', () => {
+  const ai = { text_input: { enabled: true, provider: 'openai', model: 'gpt-6-luna' }, answers: { enabled: false, provider: null, model: null } };
+  assert.equal(validateMeta({ ...meta, ai }).ai, ai);
+  assert.throws(() => validateMeta({ ...meta, ai: { ...ai, answers: { enabled: true, provider: null, model: null } } }));
+  const response = recommendation(baseQuery);
+  response.explanation_mode = 'live_quotes';
+  response.answer_generation = { status: 'generated', provider: 'anthropic', model: 'claude-sonnet-5' };
+  assert.equal(validateResponse(response, meta, baseQuery), response);
+});
+
+test('parsed text cannot mark missing or ambiguous conditions ready', () => {
+  const response = { query: { ...baseQuery }, missing_fields: [], review_fields: [], warnings: [], ready: true, provider: 'openai', model: 'gpt-6-luna' };
+  assert.equal(validateTextResponse(response, meta), response);
+  const partial = { ...response, query: { ...baseQuery, budget_kzt: null }, missing_fields: ['budget_kzt'], ready: false };
+  assert.equal(validateTextResponse(partial, meta), partial);
+  assert.throws(() => validateTextResponse({ ...partial, ready: true }, meta));
+  assert.throws(() => validateTextResponse({ ...response, warnings: ['Review year'] }, meta));
+  assert.throws(() => validateTextResponse({ ...response, query: { ...baseQuery, city: 'invented' } }, meta));
+});
 
 test('form preserves calendar days, safe integers and absent optional filters', () => {
   const result = parseForm({ ...values(), budget_kzt: '7 000 000', duration_hours: '', language: '' }, meta);

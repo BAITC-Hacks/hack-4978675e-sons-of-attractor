@@ -10,7 +10,7 @@ MAX_SAFE_INTEGER = 9_007_199_254_740_991
 Money = Annotated[int, Field(strict=True, gt=0, le=MAX_SAFE_INTEGER)]
 Count = Annotated[int, Field(strict=True, ge=0)]
 Hours = Annotated[float, Field(strict=True, gt=0, allow_inf_nan=False)]
-ExplanationMode = Literal["approved_facts", "structured_only"]
+ExplanationMode = Literal["approved_facts", "structured_only", "live_quotes"]
 Reason = Literal["busy", "format", "budget", "language", "duration"]
 
 
@@ -57,6 +57,23 @@ class DemoQuery(DTO):
     query: RecommendationQuery
 
 
+class AIFeature(DTO):
+    enabled: bool = False
+    provider: Literal["openai", "anthropic"] | None = None
+    model: str | None = None
+
+
+class AICapabilities(DTO):
+    text_input: AIFeature = Field(default_factory=AIFeature)
+    answers: AIFeature = Field(default_factory=AIFeature)
+
+
+class AnswerGeneration(DTO):
+    status: Literal["disabled", "generated", "fallback", "not_needed"] = "disabled"
+    provider: Literal["openai", "anthropic"] | None = None
+    model: str | None = None
+
+
 class MetaResponse(DTO):
     cities: list[str]
     categories: list[str]
@@ -67,6 +84,7 @@ class MetaResponse(DTO):
     versions: Versions
     explanation_mode: ExplanationMode
     demo_queries: list[DemoQuery] = Field(default_factory=list)
+    ai: AICapabilities = Field(default_factory=AICapabilities)
 
 
 class HealthResponse(DTO):
@@ -198,6 +216,7 @@ class RecommendationResponse(DTO):
     versions: Versions
     explanation_mode: ExplanationMode
     warnings: list[str]
+    answer_generation: AnswerGeneration = Field(default_factory=AnswerGeneration)
 
     @model_validator(mode="after")
     def validate_result(self):
