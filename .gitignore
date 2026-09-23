@@ -1,0 +1,11 @@
+.idea/
+__pycache__/
+venv/
+.env
+logs/
+.venv/
+.env.local
+.codex/
+tz/
+AGENTS.md
+idea.md
