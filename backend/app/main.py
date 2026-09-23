@@ -115,7 +115,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         catalog: Annotated[Catalog, Depends(get_catalog)]):
         return recommend(query, catalog)
 
-    # Add future API routes above this guard and the frontend mount.
     @app.api_route("/api/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"], include_in_schema=False)
     @app.api_route("/api", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"], include_in_schema=False)
     def unknown_api(path: str = ""):

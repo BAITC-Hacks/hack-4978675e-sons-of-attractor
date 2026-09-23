@@ -141,6 +141,13 @@ def test_missing_malformed_and_empty_facts(catalog, tmp_path, registry_dict):
     assert load_facts(path, catalog).mode == "approved_facts"
 
 
+def test_minimal_generator_metadata_from_spec(catalog, tmp_path, registry_dict):
+    registry_dict["generator"].pop("method")
+    path = tmp_path / "facts.json"
+    save(path, registry_dict)
+    assert load_facts(path, catalog).mode == "approved_facts"
+
+
 def pending_and_report(registry_dict):
     for p in registry_dict["profiles"]:
         p["review_status"] = "pending"

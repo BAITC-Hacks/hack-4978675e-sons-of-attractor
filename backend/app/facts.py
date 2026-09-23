@@ -39,7 +39,7 @@ class ProfileFacts(FactModel):
 class Generator(FactModel):
     provider: Text
     model: Text
-    method: Text
+    method: Text | None = None
     requested_model: str | None = None
     prompt_sha256: Hash | None = None
 

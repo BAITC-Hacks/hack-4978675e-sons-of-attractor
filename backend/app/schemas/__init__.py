@@ -1,9 +1,8 @@
-"""Public API request and response models."""
 import re
 from datetime import date as Date
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 DATE_MIN = Date(2026, 9, 23)
 DATE_MAX = Date(2026, 12, 31)
@@ -95,6 +94,14 @@ class Evidence(DTO):
     quote: str | None = None
     fact_id: str | None = None
 
+    @model_validator(mode="after")
+    def validate_source(self):
+        if self.kind == "description" and (not self.quote or not self.fact_id or self.source_field != "description"):
+            raise ValueError("Description evidence requires a quote, fact_id and description source")
+        if self.kind == "derived" and self.source_field != "budget_kzt-price_from_kzt":
+            raise ValueError("Unknown derived evidence source")
+        return self
+
 
 class DataFlags(DTO):
     synthetic: bool
@@ -123,6 +130,12 @@ class Card(DTO):
     data_flags: DataFlags
     rank: Rank
     comparison_note: str | None = None
+
+    @model_validator(mode="after")
+    def unique_evidence(self):
+        if len({e.id for e in self.evidence}) != len(self.evidence):
+            raise ValueError("Evidence IDs must be unique within a card")
+        return self
 
 
 class Counts(DTO):
@@ -185,3 +198,22 @@ class RecommendationResponse(DTO):
     versions: Versions
     explanation_mode: ExplanationMode
     warnings: list[str]
+
+    @model_validator(mode="after")
+    def validate_result(self):
+        if self.counts.shown_count != len(self.cards) or self.counts.shown_count != min(3, self.counts.eligible_count):
+            raise ValueError("Inconsistent result counts")
+        if len({card.id for card in self.cards}) != len(self.cards):
+            raise ValueError("Duplicate cards")
+        if self.counts.eligible_count > self.counts.catalog_count:
+            raise ValueError("Eligible count exceeds the category catalog")
+        if sum(s.field == "date" for s in self.suggestions) > 2 or sum(s.field == "budget_kzt" for s in self.suggestions) > 1:
+            raise ValueError("Too many suggestions for one field")
+        for suggestion in self.suggestions:
+            different = [field for field in type(self.query).model_fields
+                         if getattr(self.query, field) != getattr(suggestion.query, field)]
+            if different != [suggestion.field] or getattr(suggestion.query, suggestion.field) != suggestion.value:
+                raise ValueError("Suggestion must change only its declared field")
+            if suggestion.shown_count != min(3, suggestion.eligible_count) or suggestion.shown_count <= self.counts.shown_count:
+                raise ValueError("Suggestion must increase the shown count")
+        return self

@@ -70,7 +70,15 @@ def test_spec_scenarios_through_api(client, catalog, changes, status, c_count, a
     assert len(ids) == len(set(ids))
     assert body["explanation_mode"] == "structured_only"
     assert body["versions"] == client.get("/api/meta").json()["versions"]
-    assert body["suggestions"] == [] and body["city_alternatives"] == []
+    if status == "no_category_in_city":
+        assert body["suggestions"] == []
+        assert body["city_alternatives"] == [{"city": "Алматы", "catalog_count": 3}]
+    else:
+        assert body["city_alternatives"] == []
+    for suggestion in body["suggestions"]:
+        applied = client.post("/api/recommendations", json=suggestion["query"]).json()
+        assert applied["counts"]["eligible_count"] == suggestion["eligible_count"]
+        assert applied["counts"]["shown_count"] == suggestion["shown_count"] > len(body["cards"])
     by_id = {p.id: p for p in catalog.profiles}
     for card in body["cards"]:
         p = by_id[card["id"]]
