@@ -10,3 +10,4 @@ tz/
 AGENTS.md
 idea.md
 backend_tz.md
+.env.example
