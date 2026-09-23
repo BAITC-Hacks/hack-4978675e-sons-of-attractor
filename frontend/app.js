@@ -360,7 +360,7 @@ function renderResult(result, previous) {
   $('result-counter').textContent = result.status === 'found' ? `${result.counts.shown_count} ${variants(result.counts.shown_count)}` : 'Нет подходящих';
   container.append(stale, heading, querySummary(result.query), el('p', 'result-summary', result.summary));
   const warnings = [...result.warnings];
-  if (result.explanation_mode === 'structured_only' && !warnings.some(value => value.includes('структурирован'))) warnings.unshift('Подбор работает по структурированным данным; факты из описаний недоступны.');
+  if (result.cards.length && result.explanation_mode === 'structured_only' && !warnings.some(value => value.includes('структурирован'))) warnings.unshift('Подбор работает по структурированным данным; факты из описаний недоступны.');
   if (warnings.length) {
     const box = el('div', 'notice mode-warning');
     box.append(...warnings.map(value => el('p', '', fieldMessage(value, 'Часть сведений недоступна; проверьте условия и источники.'))));

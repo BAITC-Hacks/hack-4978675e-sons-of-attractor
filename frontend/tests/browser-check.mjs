@@ -369,6 +369,27 @@ try {
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
       assert.deepEqual(errors, []); await page.close();
     });
+    await run('empty results do not invent a missing-registry warning', async () => {
+      const { page, errors } = await setup({
+        meta: { ...meta, explanation_mode: 'structured_only', versions: { ...meta.versions, facts: null } },
+        respond: (route, query) => {
+          const response = structuredResponse(query);
+          response.warnings = [];
+          return route.fulfill({ json: response });
+        },
+      });
+      for (let i = 0; i < meta.demo_queries.length; i++) {
+        const expected = recommendation(meta.demo_queries[i].query);
+        if (expected.cards.length) continue;
+        await page.locator('.demo-button').nth(i).click(); await settled(page);
+        assert.equal(await page.locator('.mode-warning').count(), 0);
+        assert.equal(await page.locator('#facts-feedback').isVisible(), false);
+        assert.equal(await page.locator('.suggestions .suggestion').count(), expected.suggestions.length);
+        assert.doesNotMatch(await page.locator('body').innerText(), /реестр отсутствует|факты из описаний недоступны/);
+      }
+      assert.deepEqual(errors, []);
+      await page.close();
+    });
     await run('structured_only warnings and comparison limits remain visible', async () => {
       const { page } = await setup({ meta: { ...meta, explanation_mode: 'structured_only', versions: { ...meta.versions, facts: null } }, respond: (route, query) => {
         const response = recommendation(query); response.explanation_mode = 'structured_only'; response.versions = { ...response.versions, facts: null };

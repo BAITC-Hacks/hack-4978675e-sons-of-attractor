@@ -17,9 +17,11 @@ def recommend(query: RecommendationQuery, catalog: Catalog) -> RecommendationRes
         summary += (" Изменение только даты или только бюджета не добавляет вариантов в известных данных; "
                     "пересмотрите остальные условия вручную.")
     warnings = []
-    if catalog.facts is not None and catalog.facts.warning:
+    # Description evidence matters only when there are cards to explain.
+    # Empty-result diagnostics and suggestions use the structured catalogue.
+    if cards and catalog.facts is not None and catalog.facts.warning:
         warnings.append(catalog.facts.warning)
-    elif catalog.facts is None:
+    elif cards and catalog.facts is None:
         warnings.append("AI-реестр отсутствует; используются только структурированные поля.")
     return RecommendationResponse(
         status=result.status, query=query, summary=summary, cards=cards,
