@@ -1,0 +1,20 @@
+{
+  "type": "object",
+  "properties": {
+    "facts": {
+      "type": "array",
+      "maxItems": 2,
+      "items": {
+        "type": "object",
+        "properties": {
+          "quote": {"type": "string", "minLength": 1},
+          "event_formats": {"type": "array", "items": {"type": "string"}}
+        },
+        "required": ["quote", "event_formats"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["facts"],
+  "additionalProperties": false
+}
