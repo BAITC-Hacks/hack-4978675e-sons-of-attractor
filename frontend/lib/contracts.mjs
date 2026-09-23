@@ -59,7 +59,7 @@ const nonempty = value => text(value) && value.trim().length > 0;
 const strings = value => Array.isArray(value) && value.every(nonempty);
 const count = value => Number.isSafeInteger(value) && value >= 0;
 const positive = value => typeof value === 'number' && Number.isFinite(value) && value > 0;
-const modes = ['approved_facts', 'structured_only'];
+const modes = ['approved_facts', 'structured_only', 'live_quotes'];
 const versions = value => object(value) && nonempty(value.dataset) && nonempty(value.algorithm) && (value.facts === null || nonempty(value.facts));
 const queryShape = value => object(value) && Object.keys(value).length === QUERY_FIELDS.length && QUERY_FIELDS.every(key => Object.hasOwn(value, key));
 const requireContract = condition => { if (!condition) throw new Error('invalid_contract'); };
@@ -72,6 +72,14 @@ export function validateMeta(meta) {
   }
   requireContract(isCalendarDate(meta.date_min) && isCalendarDate(meta.date_max) && meta.date_min <= meta.date_max);
   requireContract(versions(meta.versions) && modes.includes(meta.explanation_mode) && Array.isArray(meta.demo_queries));
+  if (meta.ai !== undefined) {
+    requireContract(object(meta.ai));
+    for (const key of ['text_input', 'answers']) {
+      const feature = meta.ai[key];
+      requireContract(object(feature) && typeof feature.enabled === 'boolean');
+      requireContract(feature.enabled ? ['openai', 'anthropic'].includes(feature.provider) && nonempty(feature.model) : feature.provider === null && feature.model === null);
+    }
+  }
   const seen = new Set();
   for (const demo of meta.demo_queries) {
     requireContract(object(demo) && nonempty(demo.id) && nonempty(demo.label) && !seen.has(demo.id));
@@ -87,6 +95,11 @@ export function validateResponse(response, meta, submittedQuery) {
   requireContract(queryKey(response.query) === queryKey(submittedQuery));
   requireContract(text(response.summary) && versions(response.versions) && modes.includes(response.explanation_mode));
   requireContract(Array.isArray(response.warnings) && response.warnings.every(text));
+  if (response.answer_generation !== undefined) {
+    const generation = response.answer_generation;
+    requireContract(object(generation) && ['disabled', 'generated', 'fallback', 'not_needed'].includes(generation.status));
+    requireContract(generation.status === 'disabled' ? generation.provider === null && generation.model === null : ['openai', 'anthropic'].includes(generation.provider) && nonempty(generation.model));
+  }
   requireContract(object(response.counts));
   const { catalog_count, eligible_count, shown_count } = response.counts;
   requireContract([catalog_count, eligible_count, shown_count].every(count));
@@ -132,6 +145,20 @@ export function validateResponse(response, meta, submittedQuery) {
     requireContract(suggestion.shown_count > shown_count);
   }
   requireContract(Array.isArray(response.city_alternatives) && response.city_alternatives.every(item => object(item) && meta.cities.includes(item.city) && item.city !== response.query.city && count(item.catalog_count)));
+  return response;
+}
+
+export function validateTextResponse(response, meta) {
+  requireContract(object(response) && queryShape(response.query));
+  const errors = validateQuery(response.query, meta);
+  for (const key of QUERY_FIELDS) requireContract(response.query[key] === null || !errors[key]);
+  const required = ['city', 'date', 'event_format', 'category', 'budget_kzt'];
+  const missing = required.filter(key => response.query[key] === null);
+  requireContract(Array.isArray(response.missing_fields) && JSON.stringify(response.missing_fields) === JSON.stringify(missing));
+  requireContract(Array.isArray(response.review_fields) && response.review_fields.every(key => QUERY_FIELDS.includes(key)));
+  requireContract(strings(response.warnings) && typeof response.ready === 'boolean');
+  requireContract(['openai', 'anthropic'].includes(response.provider) && nonempty(response.model));
+  if (response.ready) requireContract(missing.length === 0 && response.review_fields.length === 0 && response.warnings.length === 0);
   return response;
 }
 

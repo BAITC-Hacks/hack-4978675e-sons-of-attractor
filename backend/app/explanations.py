@@ -24,6 +24,33 @@ def field_signature(profile: Contractor):
     return profile.price_from_kzt, tuple(sorted(profile.languages)), profile.max_hours
 
 
+def distinguish_cards(cards: list[Card]) -> list[Card]:
+    """Resolve actual text collisions, including a third card masking a pair."""
+    groups: dict[str, list[Card]] = {}
+    for card in cards:
+        groups.setdefault(quote_key(card.explanation), []).append(card)
+    for group in groups.values():
+        if len(group) < 2:
+            continue
+        hours_differ = len({c.max_hours for c in group}) > 1
+        languages_differ = len({tuple(c.languages) for c in group}) > 1
+        for card in group:
+            details = []
+            if hours_differ:
+                details.append(f"присутствие — до {card.max_hours:g} ч" if card.max_hours is not None
+                               else "ограничение присутствия по часам неприменимо")
+            if languages_differ:
+                details.append("языки: " + ", ".join(card.languages))
+            if details:
+                first, dot, rest = card.explanation.partition(".")
+                card.explanation = first + "; " + "; ".join(details) + dot + rest
+        repeats = Counter(quote_key(c.explanation) for c in group)
+        for card in group:
+            card.comparison_note = ("По доступным сведениям варианты не удаётся содержательно различить"
+                                    if repeats[quote_key(card.explanation)] > 1 else None)
+    return cards
+
+
 def build_cards(query: RecommendationQuery, catalog: Catalog, result: Evaluation) -> list[Card]:
     selected = select_facts(query, catalog, result.shown)
     signatures = Counter((*field_signature(p), quote_key(selected[p.id].quote) if selected[p.id] else None)
@@ -81,4 +108,4 @@ def build_cards(query: RecommendationQuery, catalog: Catalog, result: Evaluation
             comparison_note=("По доступным сведениям варианты не удаётся содержательно различить"
                              if signatures[signature] > 1 else None),
         ))
-    return cards
+    return distinguish_cards(cards)

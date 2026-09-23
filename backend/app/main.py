@@ -7,16 +7,27 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import ValidationError
 from starlette.exceptions import HTTPException
 
 from .catalog import Catalog, CatalogError, load_catalog
+from .ai_answers import enhance_answer
 from .core.config import Settings
 from .demo_queries import demo_queries
 from .facts import load_facts
+from .llm import ProviderError
 from .recommendations import recommend
-from .schemas import ErrorDetail, ErrorResponse, HealthResponse, MetaResponse, RecommendationQuery, RecommendationResponse, Versions
+from .schemas import AICapabilities, AIFeature, ErrorDetail, ErrorResponse, HealthResponse, MetaResponse, RecommendationQuery, RecommendationResponse, Versions
+from .text_input import TextRequest, TextResponse, parse_text
 
 logger = logging.getLogger(__name__)
+
+
+class PublicFrontend(StaticFiles):
+    async def get_response(self, path: str, scope):
+        if path not in {".", "index.html", "styles.css", "app.js", "lib/contracts.mjs", "lib/format.mjs"}:
+            raise HTTPException(404)
+        return await super().get_response(path, scope)
 
 
 class APIError(Exception):
@@ -52,6 +63,9 @@ def validate_query(query: RecommendationQuery, catalog: Annotated[Catalog, Depen
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
+
+    def feature(config):
+        return AIFeature(enabled=True, provider=config.provider, model=config.model) if config else AIFeature()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -107,13 +121,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/meta", response_model=MetaResponse, responses={503: {"model": ErrorResponse}})
     def meta(catalog: Annotated[Catalog, Depends(get_catalog)]):
         return MetaResponse(**catalog.dictionaries(), explanation_mode=catalog.explanation_mode,
-                            versions=Versions(dataset=catalog.sha256, facts=catalog.facts_sha256), demo_queries=demo_queries(catalog))
+                            versions=Versions(dataset=catalog.sha256, facts=catalog.facts_sha256), demo_queries=demo_queries(catalog),
+                            ai=AICapabilities(text_input=feature(settings.parse_model), answers=feature(settings.answer_model)))
+
+    @app.post("/api/parse-request", response_model=TextResponse,
+              responses={422: {"model": ErrorResponse}, 503: {"model": ErrorResponse}})
+    async def parse_request(body: TextRequest, catalog: Annotated[Catalog, Depends(get_catalog)]):
+        if settings.parse_model is None:
+            raise APIError(503, "text_input_disabled", "Разбор текста недоступен. Используйте форму.")
+        try:
+            return await parse_text(body.text, catalog, settings.parse_model)
+        except (ProviderError, ValidationError):
+            raise APIError(503, "text_parse_failed", "Не удалось распознать условия. Повторите попытку или заполните форму.") from None
 
     @app.post("/api/recommendations", response_model=RecommendationResponse,
               responses={422: {"model": ErrorResponse}, 503: {"model": ErrorResponse}, 500: {"model": ErrorResponse}})
-    def recommendations(query: Annotated[RecommendationQuery, Depends(validate_query)],
-                        catalog: Annotated[Catalog, Depends(get_catalog)]):
-        return recommend(query, catalog)
+    async def recommendations(query: Annotated[RecommendationQuery, Depends(validate_query)],
+                              catalog: Annotated[Catalog, Depends(get_catalog)]):
+        return await enhance_answer(recommend(query, catalog), catalog, settings.answer_model)
 
     @app.api_route("/api/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"], include_in_schema=False)
     @app.api_route("/api", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"], include_in_schema=False)
@@ -121,7 +146,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         raise HTTPException(404)
 
     if settings.frontend_path.is_dir():
-        app.mount("/", StaticFiles(directory=settings.frontend_path, html=True), name="frontend")
+        app.mount("/", PublicFrontend(directory=settings.frontend_path, html=True), name="frontend")
 
     return app
 

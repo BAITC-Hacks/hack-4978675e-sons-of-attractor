@@ -20,7 +20,7 @@
 }
 * { box-sizing: border-box; }
 body { margin: 0; }
-button, input, select { font: inherit; }
+button, input, select, textarea { font: inherit; }
 button, a, input, select, summary { -webkit-tap-highlight-color: transparent; }
 button, summary, select { cursor: pointer; }
 button { color: inherit; }
@@ -54,6 +54,13 @@ h1 { font-size: clamp(32px, 3.55vw, 52px); font-weight: 650; letter-spacing: -1.
 .section-number { font-size: 12px; font-weight: 650; color: var(--accent); }
 .panel-heading h2 { font-size: 20px; letter-spacing: -.5px; }
 .panel-description { color: var(--muted); font-size: 12px; margin: 9px 0 25px; }
+.text-input-panel { margin-bottom: 24px; padding-bottom: 22px; border-bottom: 1px solid var(--line); }
+.text-input-panel h3 { font-size: 13px; margin-bottom: 10px; }
+.text-input-panel textarea { display: block; width: 100%; min-height: 108px; resize: vertical; padding: 11px 12px; border: 1px solid #c9d0c6; border-radius: 6px; color: var(--ink); background: var(--surface); font-size: 12px; line-height: 1.6; }
+.text-input-panel textarea:disabled { background: #f0f2ec; }
+.text-input-panel textarea[aria-invalid="true"] { border-color: var(--error); }
+.text-input-panel .button { width: 100%; margin-top: 12px; }
+.text-input-panel .notice { margin-top: 12px; }
 fieldset { padding: 0; margin: 0; border: 0; min-width: 0; }
 .field { margin-bottom: 18px; border-radius: 6px; }
 .field label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 7px; }

@@ -1,5 +1,5 @@
 import {
-  QUERY_FIELDS, REASONS, REASON_LABELS, parseForm, validateMeta, validateResponse,
+  QUERY_FIELDS, REASONS, REASON_LABELS, parseForm, validateMeta, validateResponse, validateTextResponse,
   queryKey, changedFields, dateChanges,
 } from './lib/contracts.mjs';
 import { number, money, dateLabel, variants, profiles, fieldMessage } from './lib/format.mjs';
@@ -7,7 +7,7 @@ import { number, money, dateLabel, variants, profiles, fieldMessage } from './li
 const $ = id => document.getElementById(id);
 const form = $('search-form');
 const fields = Object.fromEntries(QUERY_FIELDS.map(key => [key, $(key)]));
-const state = { meta: null, active: null, requestId: 0, lastSuccess: null, displayed: null, dirty: false, retryQuery: null };
+const state = { meta: null, active: null, requestId: 0, lastSuccess: null, displayed: null, dirty: false, retryQuery: null, textActive: null, textRequestId: 0 };
 const originalEmpty = $('result-content').firstElementChild.cloneNode(true);
 
 function el(tag, className, content) {
@@ -36,7 +36,7 @@ function syncFactsNotice() {
   // Result warnings describe their own snapshot. Outside a result, show the
   // latest known mode without sharing the catalogue error container.
   const mode = (state.lastSuccess ?? state.meta)?.explanation_mode;
-  const show = mode === 'structured_only' && !state.displayed;
+  const show = mode === 'structured_only' && !state.displayed && !state.meta?.ai?.answers?.enabled;
   const notice = $('facts-feedback');
   notice.textContent = show ? 'Подбор работает по структурированным данным; факты из описаний недоступны.' : '';
   notice.hidden = !show;
@@ -99,6 +99,7 @@ function showIdle() {
   syncFactsNotice();
 }
 function editForm() {
+  cancelText(true);
   const pending = Boolean(state.active);
   invalidateRequest();
   state.dirty = true;
@@ -136,6 +137,7 @@ async function loadMeta() {
   try {
     const meta = validateMeta(await fetchJson('/api/meta', { signal: controller.signal, cache: 'no-store' }));
     state.meta = meta;
+    syncTextInput();
     for (const [key, values, placeholder] of [
       ['city', meta.cities, 'Выберите город'], ['category', meta.categories, 'Выберите категорию'],
       ['event_format', meta.event_formats, 'Выберите формат'], ['language', meta.languages, 'Неважно'],
@@ -156,6 +158,7 @@ async function loadMeta() {
     announce('Каталог загружен. Укажите условия или выберите пример.');
   } catch {
     state.meta = null;
+    syncTextInput();
     syncFactsNotice();
     document.body.dataset.ready = 'false';
     $('catalog-state').textContent = 'Каталог недоступен';
@@ -170,11 +173,91 @@ async function loadMeta() {
 
 function renderDemos(demos) {
   $('demo-buttons').replaceChildren(...demos.map(demo => button(`${demo.label} ↗`, () => {
+    cancelText(true);
     fillForm(demo.query);
     submitQuery({ ...demo.query });
   }, 'button demo-button')));
   $('demo-section').hidden = demos.length === 0;
 }
+
+function syncTextInput() {
+  const enabled = Boolean(state.meta?.ai?.text_input?.enabled);
+  $('event-text').disabled = !enabled;
+  $('parse-button').disabled = !enabled || Boolean(state.textActive);
+  $('parse-button').textContent = state.textActive ? 'Распознаём условия…' : 'Разобрать и подобрать';
+  $('text-input-hint').textContent = enabled
+    ? 'Укажите одну услугу, город, дату с годом и бюджет. Неясные условия можно уточнить в форме.'
+    : 'Свободный текст сейчас недоступен. Заполните поля ниже.';
+}
+
+function cancelText(clearMessage = false) {
+  state.textRequestId++;
+  state.textActive?.abort();
+  state.textActive = null;
+  syncTextInput();
+  if (clearMessage) {
+    $('text-feedback').hidden = true;
+    $('event-text').removeAttribute('aria-invalid');
+  }
+}
+
+function textFeedback(messages, isError = false) {
+  const box = $('text-feedback');
+  box.className = `notice${isError ? ' error-notice' : ''}`;
+  box.replaceChildren(...messages.map(message => el('p', '', fieldMessage(message, 'Проверьте распознанные условия в форме.'))));
+  box.hidden = false;
+}
+
+$('event-text').addEventListener('input', () => cancelText(true));
+$('text-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  if (!state.meta?.ai?.text_input?.enabled || state.textActive) return;
+  const text = $('event-text').value.trim();
+  if (!text || text.length > 2000) {
+    textFeedback(['Опишите событие: от 1 до 2000 символов.'], true);
+    $('event-text').setAttribute('aria-invalid', 'true');
+    $('event-text').focus();
+    return;
+  }
+  editForm();
+  const id = state.textRequestId;
+  const controller = new AbortController();
+  state.textActive = controller;
+  syncTextInput();
+  let timedOut = false;
+  const timeout = setTimeout(() => { timedOut = true; controller.abort(); }, 12000);
+  try {
+    const payload = await fetchJson('/api/parse-request', {
+      method: 'POST', signal: controller.signal, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }),
+    });
+    if (id !== state.textRequestId) return;
+    if (timedOut) throw new Error('timeout');
+    clearTimeout(timeout);
+    const parsed = validateTextResponse(payload, state.meta);
+    state.textActive = null;
+    fillForm(parsed.query); // Missing values clear old/demo defaults instead of inheriting them.
+    if (parsed.ready) {
+      textFeedback(['Условия распознаны и показаны в форме. Подбираем варианты; при необходимости измените условия.']);
+      await submitQuery(parsed.query);
+    } else {
+      textFeedback(['Проверьте распознанные условия в форме и нажмите «Подобрать варианты».', ...parsed.warnings]);
+      const errors = Object.fromEntries([...new Set([...parsed.missing_fields, ...parsed.review_fields])].map(key => [key, 'Уточните это условие.']));
+      showFieldErrors(errors);
+      if (!Object.keys(errors).length) fields.city.focus();
+      announce('Уточните условия в форме. Поиск ещё не выполнен.');
+    }
+  } catch (error) {
+    if (id !== state.textRequestId) return;
+    const message = timedOut ? 'Разбор текста занял слишком много времени. Повторите попытку или заполните форму.' :
+      error instanceof ApiError && error.payload?.error?.code === 'text_input_disabled' ? 'Свободный текст недоступен. Заполните поля формы.' :
+      'Не удалось распознать условия. Повторите попытку или заполните форму.';
+    textFeedback([message], true);
+    announce(message);
+  } finally {
+    clearTimeout(timeout);
+    if (id === state.textRequestId) { state.textActive = null; syncTextInput(); }
+  }
+});
 
 form.addEventListener('input', editForm);
 form.addEventListener('change', editForm);
@@ -193,6 +276,7 @@ form.addEventListener('submit', event => {
 });
 
 async function submitQuery(query) {
+  cancelText();
   if (state.active && queryKey(query) === state.active.queryKey) return;
   invalidateRequest();
   clearErrors();
@@ -276,7 +360,7 @@ function renderResult(result, previous) {
   $('result-counter').textContent = result.status === 'found' ? `${result.counts.shown_count} ${variants(result.counts.shown_count)}` : 'Нет подходящих';
   container.append(stale, heading, querySummary(result.query), el('p', 'result-summary', result.summary));
   const warnings = [...result.warnings];
-  if (result.explanation_mode === 'structured_only' && !warnings.some(value => value.includes('структурированным'))) warnings.unshift('Подбор работает по структурированным данным; факты из описаний недоступны.');
+  if (result.explanation_mode === 'structured_only' && !warnings.some(value => value.includes('структурирован'))) warnings.unshift('Подбор работает по структурированным данным; факты из описаний недоступны.');
   if (warnings.length) {
     const box = el('div', 'notice mode-warning');
     box.append(...warnings.map(value => el('p', '', fieldMessage(value, 'Часть сведений недоступна; проверьте условия и источники.'))));

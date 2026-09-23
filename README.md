@@ -1,167 +1,269 @@
-# hack-4978675e-sons-of-attractor
-Hackathon team repository for Sons of Attractor
+# Sobytie — Event Contractor Shortlist
 
-## Текущая готовность backend
+**Up to three suitable contractors, source-backed explanations, and a verified next step when your request has too few matches.**
 
-Реализованы строгая загрузка CSV в память при старте, справочники,
-`GET /api/meta`, `GET /api/health`, модели API и единый формат ошибок.
-Реализован `POST /api/recommendations`: точный город и категория, ограничения
-по дате, формату, бюджету, языку и длительности, максимум три карточки.
-`GET /api/meta` содержит восемь демонстрационных запросов из ТЗ.
-Реализованы объяснения с evidence, проверенные предложения одного изменения
-даты/бюджета, альтернативные города и повторяемая HTTP-проверка поставки.
-Загрузка AI-реестра реализована. Принятый реестр пока не подготовлен:
-`explanation_mode=structured_only`, `facts=null`. Для реального извлечения
-нужны `OPENAI_API_KEY` и `OPENAI_MODEL` в окружении процесса подготовки.
+Sobytie ("Событие", Russian for "event") is a working MVP for the Kazakhstan event-contractor hackathon task **#79-lite**. It searches the supplied 66-profile catalogue, enforces every requested constraint, and explains the result. The interface is in Russian to match the source data; this guide is for evaluators.
 
-Чистая функция `evaluate(query, catalog)` в `backend/app/selection.py`
-возвращает всех допущенных кандидатов и полную диагностику. В режиме
-`structured_only` E=0, порядок — начальная цена по возрастанию, затем ID
-лексикографически. При полном принятом реестре первым учитывается E —
-прямое свидетельство запрошенного формата в принятой цитате.
-Флаги происхождения данных порядок не меняют.
-`tied_on_policy` учитывает всех допущенных кандидатов, включая не показанных.
+## Run the entire project with one command
 
-Три исхода: `found`, `no_category_in_city`, `all_filtered`; каждый возвращается
-с HTTP 200. `counts.catalog_count` — количество профилей выбранного города
-и категории, `eligible_count` — после всех ограничений, `shown_count` — до трёх.
-Счётчики причин отказа пересекаются: сумма причин не является числом людей.
+Prerequisite: Docker Desktop (running, Linux containers) or Docker Engine with Docker Compose. Port **8000** must be available. The first build requires internet access to download the Python image and pinned dependencies.
 
-Без реестра карточки содержат базовые объяснения по структурированным полям
-и расчётам. С принятым реестром добавляется атрибутированная цитата с fact_id.
-Подготовка, отдельная проверка и повторное извлечение описаны в
-`backend/ai/README.md`. Реальное извлечение B3 и содержательная проверка всех
-66 профилей пока не выполнены. Полное соответствие AI-части ТЗ и готовность
-основной версии к защите не заявляются до получения и проверки реестра.
+From the repository root:
 
-Выбор факта: прямое свидетельство запрошенного формата, затем цитата,
-отсутствующая у соседних показанных профилей, затем оставшаяся цитата;
-равенство разрешается по fact.id. Если фактов нет, используются различия цены,
-языков или часов. При одинаковых сведениях возвращается comparison_note.
-Различие текста цитат не заменяет содержательную проверку реестра.
-
-При числе подходящих меньше трёх перебирается всё известное окно дат и
-проверяется минимальный полезный порог бюджета. Каждое предложение меняет
-ровно одно поле и увеличивает число показанных карточек. Возвращаются до двух
-ближайших дат, затем один бюджет. Для отсутствующей категории в городе вместо
-подсказок показываются другие города с числом профилей категории, без обещания
-их доступности. Если одно изменение не помогает, summary сообщает об этом.
-
-### Данные
-
-Исходный CSV поставляется в `backend/data/catalog.csv` (66 профилей).
-Происхождение и ожидаемый хеш описаны в `backend/data/README.md`.
-Без каталога meta и health возвращают 503.
-Приложение не подставляет демонстрационные записи вместо исходных данных.
-
-Можно задать `DATASET_PATH` и `FACTS_PATH` через переменные окружения.
-Относительные пути отсчитываются от корня репозитория, абсолютные допустимы.
-`.env.example` документирует переменные; локально `.env` автоматически не читается.
-Изменение каталога требует перезапуска приложения.
-
-### Локальный запуск (Python 3.11+)
-
-Команды PowerShell из корня репозитория, Node и БД не нужны:
-
-```powershell
-python -m venv backend/.venv
-backend/.venv/Scripts/python -m pip install -r backend/requirements-dev.txt
-backend/.venv/Scripts/python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000
+```sh
+docker-compose up --build -d
 ```
 
-Для production достаточно `backend/requirements.txt`.
-Проверенные версии прямых и транзитивных зависимостей зафиксированы в
-`backend/constraints.txt`; requirements подключает их автоматически.
-Из другого каталога используйте `--app-dir <абсолютный путь к репозиторию>`.
-Документация API: http://127.0.0.1:8000/docs.
-Если существует `frontend/`, его файлы доступны от `/`, включая `index.html`.
-Неизвестные `/api/*` всегда возвращают JSON 404.
-В текущем репозитории frontend отсутствует: общий пользовательский сценарий
-с настоящим интерфейсом ещё не проверен. `/docs` доступен для работы с API.
+Modern Compose also accepts the equivalent `docker compose up --build -d`.
 
-### Docker
+Open **[http://localhost:8000](http://localhost:8000)**. Allow a few seconds for startup after the command returns.
 
-```powershell
-docker compose up --build
+That command builds and starts **both the API and the frontend**, installs all runtime dependencies inside the image, and loads the bundled catalogue. No local Python, Node.js, npm install, database, migration, seed command, AI preprocessing, or second web server is required. A `.env` file is optional.
+
+- Application: [localhost:8000](http://localhost:8000)
+- Interactive API documentation: [localhost:8000/docs](http://localhost:8000/docs)
+- Readiness: [localhost:8000/api/health](http://localhost:8000/api/health)
+- Dictionaries, examples and AI capabilities: [localhost:8000/api/meta](http://localhost:8000/api/meta)
+
+```sh
+docker-compose ps
+docker-compose logs --tail 50 backend
+docker-compose down
 ```
 
-CSV должен находиться в `backend/data/catalog.csv` перед сборкой образа.
-Compose использует пути внутри контейнера; локальные пути Windows туда не передаются.
-Базовый Python-образ закреплён по digest. Docker healthcheck проверяет `/api/health`.
-После подготовки `backend/data/facts.json` пересоберите образ; API-ключ в образ
-не передаётся. Для поиска после установки зависимостей сеть не требуется.
+## What makes the solution useful
 
-### Проверки
+- **Strict eligibility:** a busy, over-budget, wrong-city or otherwise incompatible contractor cannot be added by a model.
+- **Traceable differences:** prices, budget headroom, languages, hours and attributed description excerpts have visible sources.
+- **Actionable empty states:** date and budget suggestions are checked by running the complete selection algorithm again. Each suggestion changes exactly one field and increases the number of displayed options.
+- **Honest limits:** starting prices are not quotes; calendar availability is not a booking; synthetic and imputed data are labelled.
+- **Reliable demo:** the form, all eight presets, ranking and suggestions work without an API key. External AI adds natural-language input and richer explanations.
 
-```powershell
-backend/.venv/Scripts/python -m pytest -c backend/pytest.ini backend/tests
-backend/.venv/Scripts/python -m compileall backend/app backend/ai backend/smoke.py
-backend/.venv/Scripts/python -m backend.smoke
+## API credentials: two independent AI stages
+
+Create an optional `.env` in the repository root using [`.env.example`](.env.example) as a reference. Docker Compose reads it automatically. After changing credentials or models, run the same startup command again; a plain `restart` does not reload environment settings.
+
+### Simplest setup: one provider for both stages
+
+OpenAI:
+
+```dotenv
+OPENAI_API_KEY=your-openai-api-key
+OPENAI_MODEL=gpt-6-luna
 ```
 
-Тесты используют временные CSV и проверяют разбор данных, ошибки, валидацию,
-стабильность справочников, однократную загрузку и границу API/статики.
-Отдельный тест проверяет поставляемый CSV: 66 профилей, хеш из ТЗ,
-13 синтетических профилей, 18 проставленных цен, 8 городов и 9 пустых max_hours.
+Or Anthropic:
 
-`backend.smoke` требует запущенный сервер; адрес можно задать через `--base-url`.
-В Docker проверка выполняется командой `docker compose exec backend python -m backend.smoke`.
-Она проходит восемь пресетов, повторяет запросы и применяет каждый совет,
-сравнивая обещанные и фактические количества и версии снимка.
-
-После подготовки настоящего реестра выполните полную проверку:
-
-```powershell
-backend/.venv/Scripts/python -m backend.ai.prepare validate
-backend/.venv/Scripts/python -m backend.smoke --require-facts
+```dotenv
+ANTHROPIC_API_KEY=your-anthropic-api-key
+ANTHROPIC_MODEL=claude-sonnet-5
 ```
 
-Флаг `--require-facts` не допускает выдавать structured_only за принятую AI-версию;
-сейчас такая проверка ожидаемо не проходит из-за отсутствующего реестра.
+Use API credentials with model access and available provider quota. A ChatGPT or Claude chat subscription is not an API credential. Keep keys in `.env` or the host environment; never put them in frontend code. `.env` is ignored by Git and excluded from the image. Keys are passed only to the backend at runtime.
 
-Проверено 2026-09-23 на Windows/Python 3.13.15 и в Linux-контейнере:
+### Separate credentials and models for each stage
 
-- 119 тестов прошли; compileall и git diff --check — без ошибок.
-- Восемь сценариев и все подсказки подтверждены настоящими HTTP-запросами.
-- 27 HTTP-запросов локально: 0,503 с всего, среднее 18,51 мс, максимум 36,32 мс.
-- Те же 27 запросов внутри Docker с `--network none`: 0,122 с всего,
-  среднее 4,45 мс, максимум 10,29 мс. Healthcheck — healthy; pip check — без ошибок.
-- Проверена перестановка строк CSV с совместимым реестром: хеши меняются,
-  бизнес-результат, порядок и тексты сохраняются.
+For example, use OpenAI for parsing and Anthropic for the final explanations:
 
-Это измерения одного прогона на текущей машине, не нагрузочный тест.
-Starlette выдаёт предупреждение об устаревании тестового адаптера httpx;
-оно не мешает прохождению проверок. Тестовые реестры существуют только в тестах
-и не подтверждают реальное извлечение или проверку содержания всех 66 профилей.
+```dotenv
+# Leave shared keys empty when separating providers.
+OPENAI_API_KEY=
+ANTHROPIC_API_KEY=
 
-### Сценарии демонстрации
+PARSE_OPENAI_API_KEY=your-openai-api-key
+PARSE_OPENAI_MODEL=gpt-6-luna
+PARSE_ANTHROPIC_API_KEY=
 
-Все запросы есть в `/api/meta.demo_queries`: формат корпоратив, 6 часов,
-язык русский, кроме последней строки. Пресеты не содержат готовые результаты.
+ANSWER_OPENAI_API_KEY=
+ANSWER_ANTHROPIC_API_KEY=your-anthropic-api-key
+ANSWER_ANTHROPIC_MODEL=claude-sonnet-5
+```
 
-| Город / категория | Дата | Бюджет, ₸ | Ожидаемый результат |
-| --- | --- | ---: | --- |
-| Алматы / Банкетный зал | 2026-11-13 | 7 000 000 | 6 подходят, показаны HK-64395, HK-58236, HK-90011 |
-| Алматы / Банкетный зал | 2026-11-14 | 7 000 000 | 2 подходят; HK-58236 исключён из-за занятости |
-| Алматы / Флорист | 2026-11-13 | 500 000 | HK-39372; null часов не мешает |
-| Астана / Декоратор | 2026-11-13 | 3 000 000 | Категории нет; в Алматы 3 профиля категории |
-| Алматы / Банкетный зал | 2026-12-19 | 7 000 000 | Все заняты; 18 и 20 декабря подходят по одному |
-| Алматы / Ведущий | 2026-11-14 | 600 000 | Никто не подходит; бюджет 650 000 добавляет вариант |
-| Алматы / Ведущий | 2026-12-12 | 1 500 000 | Бюджет не помогает; 11 декабря подходит 1, 13 декабря — 2 |
-| Алматы / Лайв-бэнд, казахский | 2026-11-13 | 1 200 000 | HK-23752 и HK-83709; различия состава требуют принятого реестра |
+The four independent credential variables are:
 
-### Роль AI и ограничения
+- `PARSE_OPENAI_API_KEY` / `PARSE_ANTHROPIC_API_KEY`: free-text interpretation.
+- `ANSWER_OPENAI_API_KEY` / `ANSWER_ANTHROPIC_API_KEY`: final card explanations.
 
-AI извлекает до двух точных цитат на профиль заранее. Скрипт сохраняет pending;
-отдельная проверка принимает или отклоняет факты всех профилей, включая пустые.
-При поиске LLM не вызывается. Схема, покрытие, статусы и хеши проверяются при
-старте; ошибка одного профиля отключает весь реестр. Описания атрибутируются
-каталогу, независимая проверка достижений подрядчиков не заявляется.
+Each has a matching model variable: `PARSE_OPENAI_MODEL`, `PARSE_ANTHROPIC_MODEL`, `ANSWER_OPENAI_MODEL`, `ANSWER_ANTHROPIC_MODEL`.
 
-Цена — начальная за мероприятие, окончательная стоимость неизвестна.
-Отсутствие даты в busy_dates не является подтверждённой бронью.
-Null max_hours означает неприменимость ограничения присутствия по схеме,
-а не безлимитную работу. Данные известны только за 2026-09-23–2026-12-31.
-synthetic=false обозначает исходную часть датасета, а не проверенную компанию.
-Сортировка по цене при одинаковом E — продуктовая эвристика, не оценка качества.
-БД, авторизация, платежи и бронирование в этот сервис не входят.
+**Selection rules, independently for each stage:**
+
+1. `PARSE_ENABLED=false` or `ANSWER_ENABLED=false` disables that stage.
+2. A non-empty stage-specific key overrides the shared key for that provider.
+3. If an effective OpenAI key exists, use OpenAI. Otherwise, use Anthropic if its effective key exists.
+4. Model selection follows stage-specific model → shared provider model → built-in default.
+5. With no key, text input is disabled and catalogue-based explanations remain available.
+
+An invalid OpenAI key still has priority. Runtime failures do **not** silently switch providers or incur a second provider charge: parsing reports an error, while explanations fall back to the catalogue response. Remove the OpenAI key to select Anthropic. `/api/meta` reports the configured provider/model for each stage, never the keys; `enabled` means configured, not that provider access has been verified.
+
+### Suggested models
+
+The following API IDs were checked against official documentation on **2026-09-23**. Account availability and quotas vary. The defaults below are application choices for a short extraction task, not a benchmark result.
+
+**OpenAI — three choices:**
+
+- `gpt-6-luna` — default for this app; suitable starting point for focused extraction and excerpt selection.
+- `gpt-6-sol` — a balanced option if your examples need stronger interpretation.
+- `gpt-6-astra` — highest-capability option for difficult briefs; allow for greater cost and latency.
+
+See the [official OpenAI model catalogue](https://developers.openai.com/api/docs/models) and [structured outputs guide](https://developers.openai.com/api/docs/guides/structured-outputs). The app uses the Responses API with strict JSON output and `store=false`; GPT-5/6 calls use low reasoning effort for interactive latency.
+
+**Anthropic — three choices:**
+
+- `claude-sonnet-5` — default; a practical starting point for this app's quality/latency tradeoff.
+- `claude-haiku-4-5-20251001` — a faster alternative for short, straightforward briefs.
+- `claude-opus-5-5` — a stronger option for difficult interpretation; heavier models may exceed the interactive deadline.
+
+See the [official Anthropic model catalogue](https://platform.claude.com/docs/en/models/overview) and [structured outputs guide](https://platform.claude.com/docs/en/build-with-claude/structured-outputs). The app uses Messages with `output_config.format`. These are direct provider APIs, not Azure or Bedrock credentials.
+
+Each AI call has an **8-second total deadline**, with no automatic retry. The browser allows 12 seconds per endpoint request. A text-driven search can make two sequential calls: parsing and then explanation generation. Provider latency is external; a slow answer falls back to the functioning catalogue search.
+
+## User flow
+
+### Form
+
+Choose a city, date, event format, contractor category and budget in KZT. Language and attendance duration are optional. Click **«Подобрать варианты»**. The page shows up to three cards, supporting evidence, exclusion reasons and useful alternatives.
+
+### Natural language
+
+When parsing credentials are configured, enter a request in **«Или опишите своими словами»**, for example:
+
+> Нужен ведущий в Алматы на корпоратив 14 ноября 2026, бюджет 700 тысяч тенге, на русском языке, на 6 часов.
+
+Click **«Разобрать и подобрать»**. A complete, unambiguous interpretation fills the form and starts the same search. Missing or uncertain values fill a partial form and require clarification before searching. Unmentioned fields never inherit values from a previous request or preset.
+
+The parser normalizes clear synonyms into catalogue values, validates dates and numeric bounds, and must provide a literal supporting text span for every extracted value. It does not silently choose among multiple services or invent a missing budget. Unsupported constraints and inferred years require review. Model interpretation is still fallible: all applied values remain visible and editable in the form.
+
+### Final explanations with AI
+
+The backend first determines eligible candidates and their order. Only then does the answer model see the accepted query and up to three selected profiles. It selects a distinguishing excerpt and an emphasis (price, language or hours). The server validates the IDs and exact quote membership, computes every number, and assembles the final card text with sources.
+
+This is **grounded AI-assisted answer generation**: the model chooses useful content; code supplies factual wording and arithmetic. It cannot change eligibility, ranking, prices, counts, diagnostics or suggestions. Invalid IDs, invented quotes, malformed output, refusal, rate limits and timeouts produce the normal catalogue explanations with a visible notice. Empty results need no model call: their reasons and alternatives are computed directly.
+
+## Demo guide for judges
+
+The eight buttons under **«Попробуйте на примере»** send ordinary API requests against the bundled CSV. They are not prerecorded answers.
+
+1. **Halls, Almaty, 13 November, 7M KZT:** six eligible profiles, three displayed (`HK-64395`, `HK-58236`, `HK-90011`) in the default ranking.
+2. **The same halls on 14 November:** two eligible profiles; the interface explains calendar exclusions.
+3. **Florist, Almaty, 13 November, 500K KZT:** one result; `max_hours=null` is handled without inventing unlimited attendance.
+4. **Decorator in Astana:** the category is absent there. Other cities are labelled as catalogue presence, not a promise of availability or travel.
+5. **Halls on 19 December:** no match; applying 18 or 20 December actually produces a candidate.
+6. **Host on 14 November, 600K KZT:** no match; the verified 650K threshold adds a candidate.
+7. **Hosts on 12 December:** no match due to the calendar; an increased budget is not presented as a cure.
+8. **Live bands, Almaty, 13 November, Kazakh, 1.2M KZT:** two similarly priced profiles. With AI enabled, inspect the source excerpts for differences in musical composition. Without descriptions, the interface honestly states when the structured fields cannot distinguish them.
+
+Repeat any query to demonstrate the same card order. Change the date, inspect **«Источники»**, apply a suggested correction, and show the resulting request parameters.
+
+## Selection rules and architecture
+
+One FastAPI/Uvicorn process serves the API and plain HTML/CSS/JavaScript on the same origin. Python 3.13 and dependency versions are pinned in the Dockerfile and constraints file. Runtime provider HTTP calls use HTTPX. No database is required: the 66 immutable profiles are parsed once into memory.
+
+```text
+Form -------------------------------> validated query
+Free text -> optional provider -> editable/validated query
+                                         |
+                                         v
+CSV -> city/category -> ALL hard filters -> deterministic top 3
+                         |                       |
+                         v                       v
+                exclusion diagnostics     optional answer provider
+                         |                -> exact source validation
+                         v                       |
+             date/budget re-evaluation           v
+                         +--------------> cards + evidence + next steps
+```
+
+Hard filters enforce exact category membership, exact city, date not in `busy_dates`, accepted event format, starting price within budget, and optional language/hours. `max_hours=null` means the attendance-hours constraint is inapplicable; it never bypasses the calendar.
+
+The order is `(-E, price_from_kzt, id)`. `E` is a direct format witness from a complete, previously reviewed offline registry, if supplied. The default checkout has no such registry, so all E values are zero and ordering is ascending starting price, then ID. This is a disclosed product heuristic, not a quality score. Runtime AI excerpts **never** change E or ordering. Model wording/excerpt selection may vary between calls; the underlying selection and order do not.
+
+There are three explicit outcomes: `found`, `no_category_in_city`, `all_filtered`. Suggestions run through the same `evaluate()` function and must increase `min(3, eligible_count)`. Exclusion counters overlap because a contractor may fail several constraints.
+
+### Source data and limits
+
+- Data: [`backend/data/catalog.csv`](backend/data/catalog.csv), 66 anonymized profiles, including 13 labelled synthetic profiles.
+- Original CSV SHA-256: `6a724b6b7dfb5973343e68ba18dadb60fc807d87e3d78f03ee86fb26cb089f7d`.
+- Calendar: **2026-09-23 through 2026-12-31**, inclusive. Dates outside it are rejected.
+- Budget: for one contractor service, in integer KZT, up to JavaScript's safe integer limit.
+- Starting prices, imputed city/price values, and description claims are presented with their limitations.
+- Quotes are exact excerpts, not independent fact-checking. Automatic substring validation cannot prove semantic completeness.
+- No booking, payments, authentication, contractor messaging or claims of guaranteed availability.
+- This is a local hackathon MVP. Public hosting with paid API keys needs access/rate controls.
+
+### Optional offline registry
+
+The earlier reviewed-registry workflow is retained in [`backend/ai/README.md`](backend/ai/README.md). It is **not a startup requirement** for either the no-key mode or the live OpenAI/Anthropic features. No generation job or 66-profile paid batch runs during startup.
+
+A compatible `backend/data/facts.json`, if supplied before building, enables `approved_facts`. Missing or invalid registries fall back to structured fields. Runtime excerpts use `live_quotes` and are never mislabelled as a fully reviewed offline registry. The legacy offline preparation CLI currently uses OpenAI; it is separate from the two-provider runtime integration.
+
+## API
+
+- `GET /api/health`: catalogue readiness, count and version hashes; does not make a paid provider request.
+- `GET /api/meta`: dictionaries, calendar, eight demo queries and per-stage AI configuration.
+- `POST /api/parse-request`: `{ "text": "..." }` → partial/complete query, missing fields, review fields and warnings. Returns 503 when parsing is disabled or unavailable.
+- `POST /api/recommendations`: validated query → cards, evidence, counts, diagnostics and checked suggestions. `answer_generation.status` is `disabled`, `generated`, `fallback` or `not_needed`.
+
+Example request body for `/api/recommendations`:
+
+```json
+{
+  "city": "Алматы",
+  "date": "2026-11-13",
+  "event_format": "корпоратив",
+  "category": "Банкетный зал",
+  "budget_kzt": 7000000,
+  "duration_hours": 6,
+  "language": "русский"
+}
+```
+
+Invalid input returns 422 with an error envelope and field errors. Missing/broken catalogue data returns 503. Provider failure during explanation generation returns a valid recommendation response with a fallback notice. Keys, upstream error bodies and stack traces are not sent to the browser. Only application assets are publicly served; tests and developer tools return 404.
+
+## Verification and development
+
+Verification snapshot (2026-09-23): **139 backend tests, 12 frontend contract checks, and 24 browser scenarios passed**. The no-key Docker application was exercised with 27 live HTTP requests across all eight demo scenarios, plus the browser/API integration check. Provider protocol and text-to-recommendation tests use simulated OpenAI/Anthropic HTTP responses. **No live paid provider call was verified in the delivery environment because credentials were not configured**; the optional live-AI command below checks that boundary with your credentials.
+
+The running image includes a dependency-free HTTP smoke checker:
+
+```sh
+docker-compose exec -T backend python -m backend.smoke
+```
+
+It exercises all eight examples, repeated ordering, and suggested changes against the live API. With answer credentials configured, it makes real provider requests; use no keys or `ANSWER_ENABLED=false` for an offline demonstration. To require successful live AI excerpts instead of accepting fallback:
+
+```sh
+docker-compose exec -T backend python -m backend.smoke --require-live-ai
+```
+
+`--require-facts` is a separate check for the optional reviewed offline registry and is expected to fail when that registry is absent. It is not the live-AI readiness check.
+
+For contributors, automated backend tests live in `backend/tests` and frontend contract/browser checks in `frontend/tests`. Backend tests use HTTP provider mocks, exercise both wire protocols and fallback behavior, and do not spend API credits. Development-only checks can be run inside the container:
+
+```sh
+docker-compose exec -T backend python -m pip install -r backend/requirements-dev.txt
+docker-compose exec -T backend python -m pytest -c backend/pytest.ini backend/tests -q
+```
+
+Those development commands are **not required to run the application**. Frontend contract checks require Node.js only for development: `node --test frontend/tests/contracts.test.mjs`. The optional browser harness uses Playwright and Chrome; see [`frontend/HANDOFF.md`](frontend/HANDOFF.md).
+
+### Key files
+
+- `backend/app/main.py`: routes, startup and public static asset allowlist.
+- `backend/app/catalog.py`, `selection.py`, `suggestions.py`: source loading and deterministic business logic.
+- `backend/app/explanations.py`: catalogue explanations and real field differences.
+- `backend/app/llm.py`: shared OpenAI/Anthropic transport and deadline handling.
+- `backend/app/text_input.py`, `ai_answers.py`: prompts, output schemas, validation and AI behavior.
+- `backend/app/core/config.py`: provider priority and credential/model settings.
+- `frontend/`: accessible form, text input, results, evidence and suggestion controls.
+- `docker-compose.yml`, `backend/Dockerfile`, `.env.example`: complete runnable delivery.
+
+## Troubleshooting
+
+- **Docker cannot connect:** start Docker Desktop and enable Linux containers, then rerun the startup command.
+- **Port 8000 is occupied:** stop the process using it or change only the host side of `8000:8000` in Compose.
+- **Text input is disabled:** check `PARSE_ENABLED`, the parsing/shared credentials and `/api/meta`; recreate the container with the startup command after editing `.env`.
+- **AI falls back:** verify the selected provider, exact model ID, quota and key permissions. An OpenAI key takes priority even if invalid. Catalogue search remains usable.
+- **A valid-looking date is rejected:** the supplied calendar covers only the documented 2026 window.
+- **No or few results:** inspect the exclusion reasons and verified suggestions. The app never relaxes your constraints silently.
+- **Source catalogue or accepted facts changed:** rebuild with the startup command; data is a startup snapshot, not a hot-reloaded file.
