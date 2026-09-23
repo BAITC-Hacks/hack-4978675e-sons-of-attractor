@@ -161,7 +161,7 @@ try {
         assert.equal(requests.length, before + 1);
         assert.deepEqual(requests.at(-1), meta.demo_queries[i].query);
         assert.equal(await page.locator('#request-feedback').isVisible(), false);
-        if (i === 1) assert.match(await page.locator('.contractor-card').textContent(), /Ограничение по часам присутствия неприменимо/);
+        if (i === 1) assert.match(await page.locator('.contractor-card').textContent(), /Почасовое ограничение не применяется/);
         if (i === 5) {
           assert.deepEqual(await resultIds(page), ['HK-23752', 'HK-83709']);
           assert.match(await page.locator('.explanation').nth(0).textContent(), /два вокалиста/);
@@ -195,7 +195,7 @@ try {
       const { page, requests } = await setup();
       await page.locator('.demo-button').nth(2).click();
       await page.getByRole('button', { name: 'Искать: Алматы' }).waitFor();
-      assert.match(await page.locator('#results-title').textContent(), /категории нет в датасете/);
+      assert.match(await page.locator('#results-title').textContent(), /категории нет в каталоге/);
       assert.equal(await page.locator('.contractor-card').count(), 0);
       await page.getByRole('button', { name: 'Искать: Алматы' }).click();
       await page.locator('.contractor-card').waitFor();
@@ -301,7 +301,7 @@ try {
       assert.equal(await page.locator('#facts-feedback').isVisible(), true);
       await submit(page);
       assert.equal(await page.locator('#facts-feedback').isVisible(), false);
-      assert.match(await page.locator('.mode-warning').textContent(), /факты из описаний недоступны/);
+      assert.match(await page.locator('.mode-warning').textContent(), /сведения из описаний пока недоступны/);
       assert.equal(await page.locator('.comparison-note').count(), 3); await page.close();
     });
     await run('demo results and applied suggestions reveal the heading on desktop and mobile', async () => {
@@ -376,10 +376,10 @@ try {
         assert.equal(await page.locator('#facts-feedback').isVisible(), false);
         assert.equal(await page.locator('.mode-warning').count(), 0);
         assert.equal(await page.locator('.evidence-list blockquote').count(), 3);
-        assert.doesNotMatch(await page.locator('body').innerText(), /факты из описаний недоступны/);
+        assert.doesNotMatch(await page.locator('body').innerText(), /сведения из описаний пока недоступны/);
         await page.locator('#date').fill('2026-11-14'); await submit(page);
         assert.equal(await page.locator('#facts-feedback').isVisible(), false);
-        assert.match(await page.locator('.mode-warning').textContent(), /факты из описаний недоступны/);
+        assert.match(await page.locator('.mode-warning').textContent(), /сведения из описаний пока недоступны/);
         assert.equal(await page.locator('.evidence-list blockquote').count(), 0);
         assert.equal(await page.locator('#date-comparison').count(), 0, 'Different facts versions must not be compared.');
         await submit(page);
