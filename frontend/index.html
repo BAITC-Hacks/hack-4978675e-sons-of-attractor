@@ -3,9 +3,9 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#f5f4ef">
-    <meta name="description" content="До трёх event-подрядчиков по вашим условиям, с конкретными аргументами и источниками.">
-    <title>Событие — подбор подрядчиков</title>
+    <meta name="theme-color" content="#f8f7f4">
+    <meta name="description" content="Подберите площадку, ведущего или музыкантов для мероприятия. Сравните цены, условия и доступность на вашу дату.">
+    <title>Событие — проект для hackalem.ai</title>
     <link rel="icon" href="data:,">
     <link rel="stylesheet" href="./styles.css">
     <script type="module" src="./app.js"></script>
@@ -14,33 +14,37 @@
     <a class="skip-link" href="#search-form">Перейти к подбору</a>
     <header class="site-header page-width">
       <a class="brand" href="./" aria-label="Событие — главная">
-        <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
+        <span class="brand-mark" aria-hidden="true">с<span></span></span>
         Событие<span class="brand-dot">.</span>
       </a>
-      <span class="header-caption">Подрядчики для вашего события</span>
-      <span class="dataset-tag"><span class="status-dot" aria-hidden="true"></span><span id="catalog-state">Загружаем каталог</span></span>
+      <nav class="header-nav" aria-label="Навигация"><a href="#workspace">Подобрать подрядчика</a><a href="#demo-section" id="demo-link" hidden>Примеры</a></nav>
+      <div class="hackathon-credit"><span>Проект для хакатона</span><span class="hackathon-name">hackalem.ai<span aria-hidden="true">↗</span></span></div>
     </header>
 
     <main class="page-width">
       <section class="intro" aria-labelledby="page-title">
-        <div>
-          <p class="eyebrow">МЕНЬШЕ ПОИСКА. БОЛЬШЕ ЯСНОСТИ.</p>
-          <h1 id="page-title">Кого выбрать<br>для вашего события</h1>
-          <p class="intro-copy">До трёх вариантов с конкретными аргументами.<br class="desktop-break"> Сравните условия, особенности и источники — и решите, кто вам подходит.</p>
+        <div class="intro-text">
+          <p class="eyebrow"><span class="eyebrow-line" aria-hidden="true"></span>ПЛОЩАДКИ · ВЕДУЩИЕ · МУЗЫКА</p>
+          <h1 id="page-title">Ваше событие.<br><span>Ваша команда.</span></h1>
+          <p class="intro-copy">Найдите подрядчиков на вашу дату и бюджет.<br class="desktop-break"> Сравните до трёх вариантов и выберите подходящий.</p>
+          <a class="intro-link" href="#workspace">Начать подбор <span aria-hidden="true">↗</span></a>
         </div>
-        <div class="intro-aside" aria-label="Принципы подбора">
-          <p><span aria-hidden="true">01</span> Учитываем ваши условия</p>
-          <p><span aria-hidden="true">02</span> Показываем основания выбора</p>
-          <p><span aria-hidden="true">03</span> Объясняем, если вариантов нет</p>
+        <div class="event-art" aria-hidden="true">
+          <div class="art-grid"></div>
+          <div class="art-disc"><div class="disc-center"></div></div>
+          <div class="art-orbit"></div>
+          <div class="art-asterisk">✳</div>
+          <div class="event-ticket"><span class="ticket-caption">ПОВОД ВСТРЕТИТЬСЯ</span><span class="ticket-title">Есть.</span><div class="ticket-bottom"><span>Осталось найти команду</span><span>↗</span></div></div>
+          <span class="art-note">СОБЫТИЕ / 2026</span>
         </div>
       </section>
 
+      <div class="workspace-heading" id="workspace"><div><span class="section-number" aria-hidden="true">01 —</span><h2>Соберём вашу подборку</h2></div><span class="dataset-tag"><span class="status-dot" aria-hidden="true"></span><span id="catalog-state">Загружаем каталог</span></span></div>
       <div id="meta-feedback" class="notice service-notice" hidden></div>
-      <div id="facts-feedback" class="notice service-notice" hidden></div>
       <div class="workspace">
         <aside class="search-panel" aria-labelledby="form-title">
-          <div class="panel-heading"><span class="section-number" aria-hidden="true">01 /</span><h2 id="form-title">Ваше событие</h2></div>
-          <p class="panel-description">Укажите условия для одной услуги.</p>
+          <div class="panel-heading"><h2 id="form-title">Детали события</h2><span class="panel-icon" aria-hidden="true">↗</span></div>
+          <p class="panel-description">Начните с одной услуги.</p>
           <section class="text-input-panel" aria-labelledby="text-input-title">
             <h3 id="text-input-title">Или опишите своими словами</h3>
             <form id="text-form" novalidate>
@@ -62,7 +66,7 @@
               <div class="field" data-field="date">
                 <label for="date">Дата мероприятия <span class="sr-only">(обязательно)</span></label>
                 <input id="date" name="date" type="date" required aria-describedby="date-hint date-error">
-                <p class="field-hint" id="date-hint">Загружаем окно календаря…</p>
+                <p class="field-hint" id="date-hint">Загружаем доступные даты…</p>
                 <p class="field-error" id="date-error" hidden></p>
               </div>
               <div class="field" data-field="event_format">
@@ -76,52 +80,54 @@
                 <p class="field-error" id="category-error" hidden></p>
               </div>
               <div class="field" data-field="budget_kzt">
-                <label for="budget_kzt">Бюджет на эту услугу, ₸ <span class="sr-only">(обязательно)</span></label>
+                <label for="budget_kzt">Бюджет на услугу, ₸ <span class="sr-only">(обязательно)</span></label>
                 <input id="budget_kzt" name="budget_kzt" type="text" inputmode="numeric" placeholder="Например, 700 000" required autocomplete="off" aria-describedby="budget-hint budget_kzt-error">
-                <p class="field-hint" id="budget-hint">Начальная цена за мероприятие, не за час.</p>
+                <p class="field-hint" id="budget-hint">Сравниваем с ценой «от» за мероприятие.</p>
                 <p class="field-error" id="budget_kzt-error" hidden></p>
               </div>
               <details class="optional-fields" open>
-                <summary>Дополнительные условия <span>необязательно</span></summary>
+                <summary>Язык и длительность <span>необязательно</span></summary>
                 <div class="field" data-field="language">
                   <label for="language">Язык работы</label>
                   <select id="language" name="language" aria-describedby="language-error"><option value="">Неважно</option></select>
                   <p class="field-error" id="language-error" hidden></p>
                 </div>
                 <div class="field" data-field="duration_hours">
-                  <label for="duration_hours">Сколько часов нужен подрядчик</label>
+                  <label for="duration_hours">Длительность, часов</label>
                   <input id="duration_hours" name="duration_hours" type="text" inputmode="decimal" placeholder="Без ограничения" autocomplete="off" aria-describedby="duration_hours-error">
                   <p class="field-error" id="duration_hours-error" hidden></p>
                 </div>
               </details>
             </fieldset>
             <button class="button button-primary search-button" id="submit-button" type="submit" disabled><span>Подобрать варианты</span><span aria-hidden="true">↗</span></button>
-            <p class="search-footnote">Доступность — по календарю датасета.</p>
+            <p class="search-footnote">Проверяем занятость по календарю каталога.</p>
           </form>
         </aside>
 
         <section class="results-panel" aria-labelledby="results-title" aria-busy="false" id="results-panel">
           <div class="results-topline"><span class="eyebrow">ВАША ПОДБОРКА</span><span id="result-counter" class="result-counter">До 3 вариантов</span></div>
+          <div id="facts-feedback" class="notice service-notice" hidden></div>
           <div id="request-feedback" hidden></div>
           <div id="result-content">
             <div class="empty-state initial-state">
-              <div class="empty-symbol" aria-hidden="true"><span></span><span></span><span></span></div>
-              <p class="eyebrow">НАЧНЁМ С ВАШИХ УСЛОВИЙ</p>
-              <h2 id="results-title" tabindex="-1">Хороший выбор начинается<br>с понятного сравнения</h2>
-              <p>Заполните форму и нажмите «Подобрать варианты».<br>Здесь появятся условия, аргументы и особенности каждого варианта.</p>
-              <div class="empty-labels" aria-hidden="true"><span>Условия</span><span>Отличия</span><span>Источники</span></div>
+              <span class="empty-corner" aria-hidden="true">ВАШ СЛЕДУЮЩИЙ ШАГ</span>
+              <div class="empty-symbol" aria-hidden="true"><span><i></i></span><span><i></i></span><span><i></i></span></div>
+              <h2 id="results-title" tabindex="-1">Кто подойдёт<br>вашему событию?</h2>
+              <p>Укажите условия в форме.<br>Здесь появятся варианты с ценами и деталями.</p>
+              <div class="empty-labels" aria-hidden="true"><span>На вашу дату</span><span>В рамках бюджета</span></div>
             </div>
+            <div class="selection-steps" aria-label="Как выбрать подрядчика"><div><span>01</span><p>Укажите<br><strong>условия</strong></p></div><div><span>02</span><p>Сравните<br><strong>варианты</strong></p></div><div><span>03</span><p>Уточните<br><strong>детали</strong></p></div></div>
           </div>
         </section>
       </div>
 
       <section id="demo-section" class="demo-section" aria-labelledby="demo-title" hidden>
-        <div><p class="eyebrow">ПОПРОБУЙТЕ НА ПРИМЕРЕ</p><h2 id="demo-title">Разные условия. Понятный результат.</h2><p>Пример заполнит форму и запустит подбор по каталогу.</p></div>
+        <div><p class="eyebrow">НЕ ЗНАЕТЕ, С ЧЕГО НАЧАТЬ?</p><h2 id="demo-title">Попробуйте на примере</h2><p>Выберите сценарий — мы заполним форму и найдём варианты.</p></div>
         <div id="demo-buttons" class="demo-buttons"></div>
       </section>
     </main>
 
-    <footer class="site-footer page-width"><span class="footer-brand">Событие.</span><p>Помогаем сравнить и выбрать. Условия и итоговую стоимость уточняйте у подрядчика.</p><span>Хакатон · 2026</span></footer>
+    <footer class="site-footer page-width"><span class="footer-brand">Событие<span>.</span></span><p>Условия и итоговую стоимость уточняйте у подрядчика.</p><span>Сделано для <strong>hackalem.ai</strong> · 2026</span></footer>
     <div id="announcer" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
     <noscript><p class="notice">Для подбора включите JavaScript в браузере.</p></noscript>
   </body>

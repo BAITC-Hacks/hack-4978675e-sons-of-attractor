@@ -8,7 +8,13 @@ const $ = id => document.getElementById(id);
 const form = $('search-form');
 const fields = Object.fromEntries(QUERY_FIELDS.map(key => [key, $(key)]));
 const state = { meta: null, active: null, requestId: 0, lastSuccess: null, displayed: null, dirty: false, retryQuery: null, textActive: null, textRequestId: 0 };
-const originalEmpty = $('result-content').firstElementChild.cloneNode(true);
+const originalEmpty = [...$('result-content').children].map(child => child.cloneNode(true));
+const factsNotice = 'Сравниваем цены, условия и занятость. Дополнительные сведения из описаний пока недоступны.';
+const factsWarnings = new Set([
+  'AI-реестр отсутствует; используются только структурированные поля.',
+  'AI-реестр повреждён, несовместим или не полностью проверен; он целиком отключён.',
+  'Подбор работает по структурированным данным; факты из описаний недоступны.',
+]);
 
 function el(tag, className, content) {
   const element = document.createElement(tag);
@@ -38,7 +44,7 @@ function syncFactsNotice() {
   const mode = (state.lastSuccess ?? state.meta)?.explanation_mode;
   const show = mode === 'structured_only' && !state.displayed && !state.meta?.ai?.answers?.enabled;
   const notice = $('facts-feedback');
-  notice.textContent = show ? 'Подбор работает по структурированным данным; факты из описаний недоступны.' : '';
+  notice.textContent = show ? factsNotice : '';
   notice.hidden = !show;
 }
 function readForm() { return Object.fromEntries(QUERY_FIELDS.map(key => [key, fields[key].value])); }
@@ -94,7 +100,7 @@ function feedback(message, retry) {
 }
 function showIdle() {
   state.displayed = null;
-  $('result-content').replaceChildren(originalEmpty.cloneNode(true));
+  $('result-content').replaceChildren(...originalEmpty.map(child => child.cloneNode(true)));
   $('result-counter').textContent = 'До 3 вариантов';
   syncFactsNotice();
 }
@@ -178,6 +184,7 @@ function renderDemos(demos) {
     submitQuery({ ...demo.query });
   }, 'button demo-button')));
   $('demo-section').hidden = demos.length === 0;
+  $('demo-link').hidden = demos.length === 0;
 }
 
 function syncTextInput() {
@@ -356,11 +363,13 @@ function renderResult(result, previous) {
   stale.id = 'stale-notice'; stale.hidden = true;
   const heading = el('h2', 'result-heading'); heading.id = 'results-title'; heading.tabIndex = -1;
   if (result.status === 'found') heading.textContent = result.counts.eligible_count > 3 ? `Показаны 3 из ${result.counts.eligible_count} подходящих` : `Подобрали ${result.counts.shown_count} ${variants(result.counts.shown_count)}`;
-  else heading.textContent = result.status === 'no_category_in_city' ? 'В этом городе такой категории нет в датасете' : 'Есть кандидаты, но никто не проходит условия';
+  else heading.textContent = result.status === 'no_category_in_city' ? 'В этом городе такой категории нет в каталоге' : 'Есть кандидаты, но никто не проходит условия';
   $('result-counter').textContent = result.status === 'found' ? `${result.counts.shown_count} ${variants(result.counts.shown_count)}` : 'Нет подходящих';
   container.append(stale, heading, querySummary(result.query), el('p', 'result-summary', result.summary));
+
   const warnings = [...result.warnings];
   if (result.cards.length && result.explanation_mode === 'structured_only' && !warnings.some(value => value.includes('структурирован'))) warnings.unshift('Подбор работает по структурированным данным; факты из описаний недоступны.');
+
   if (warnings.length) {
     const box = el('div', 'notice mode-warning');
     box.append(...warnings.map(value => el('p', '', fieldMessage(value, 'Часть сведений недоступна; проверьте условия и источники.'))));
@@ -368,7 +377,7 @@ function renderResult(result, previous) {
   }
   renderDateComparison(previous, result, container);
   if (result.cards.length) {
-    container.append(el('p', 'pricing-note', 'Цены начальные; итоговую стоимость нужно уточнить. Доступность — по календарю датасета.'));
+    container.append(el('p', 'pricing-note', 'Цены указаны «от». Итоговую стоимость уточняйте у подрядчика. Занятость — по календарю каталога.'));
     const cards = el('div', 'cards');
     cards.append(...result.cards.map(renderCard));
     container.append(cards);
@@ -396,12 +405,12 @@ function renderCard(card, index) {
   if (card.data_flags.city_imputed) flags.append(el('span', 'badge badge-warm', 'Город проставлен при подготовке данных'));
   const facts = el('div', 'card-facts');
   facts.append(el('span', '', `Языки: ${card.languages.join(', ')}`));
-  facts.append(el('span', '', card.max_hours === null ? 'Ограничение по часам присутствия неприменимо' : `До ${number(card.max_hours)} ч на площадке`));
+  facts.append(el('span', '', card.max_hours === null ? 'Почасовое ограничение не применяется' : `До ${number(card.max_hours)} ч на площадке`));
   article.append(top, flags, el('p', 'explanation', card.explanation), facts,
-    el('p', 'headroom', `На ${money(card.budget_headroom_kzt)} ниже бюджета по начальной цене.`));
+    el('p', 'headroom', `В запасе ${money(card.budget_headroom_kzt)} от бюджета по цене «от»`));
   if (card.comparison_note) article.append(el('p', 'notice comparison-note', card.comparison_note));
   const details = el('details', 'evidence-details');
-  details.append(el('summary', '', 'На чём основан вывод'));
+  details.append(el('summary', '', 'Детали и источники'));
   const evidenceList = el('ul', 'evidence-list');
   for (const evidence of card.evidence) {
     const item = el('li');
@@ -483,7 +492,7 @@ function renderDiagnostics(result) {
   details.append(el('summary', '', 'Как устроен подбор'));
   const content = el('div', 'diagnostics-content');
   content.append(el('p', '', `В городе в этой категории: ${result.counts.catalog_count}. Прошли все условия: ${result.counts.eligible_count}. Показаны: ${result.counts.shown_count}.`));
-  content.append(el('p', '', 'Сначала проверяются город, категория, дата, формат, бюджет, язык и длительность. Среди подходящих сначала идут профили с прямым свидетельством нужного формата в принятом реестре, затем — с меньшей начальной ценой. При равенстве порядок определяется ID. Это политика отбора, а не рейтинг качества.'));
+  content.append(el('p', '', 'Проверяем город, услугу, дату, формат, бюджет, язык и длительность. Среди подходящих выше стоят те, у кого есть проверенное упоминание вашего формата в описании, затем — варианты с меньшей ценой «от». При равенстве сохраняем порядок по номеру профиля. Позиция в списке не означает оценку качества.'));
   const reasons = el('dl', 'reason-list');
   for (const reason of REASONS) reasons.append(el('dt', '', REASON_LABELS[reason]), el('dd', '', String(result.diagnostics.reason_counts[reason])));
   content.append(reasons, el('p', '', 'У одного профиля может быть несколько причин отказа. Эти числа нельзя складывать как количество подрядчиков.'));
